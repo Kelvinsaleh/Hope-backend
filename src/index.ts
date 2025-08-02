@@ -53,7 +53,7 @@ const startServer = async () => {
     await connectDB();
 
     // Then start the server
-    const PORT = process.env.PORT || 3001;
+    const PORT = process.env.PORT || 5173;
     app.listen(PORT, () => {
       logger.info(`Server is running on port ${PORT}`);
       logger.info(
