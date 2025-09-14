@@ -35,3 +35,7 @@ export const auth = async (req: Request, res: Response, next: NextFunction) => {
     res.status(401).json({ message: "Invalid authentication token" });
   }
 };
+
+
+// Alias for compatibility
+export const authenticateToken = auth;

@@ -1,0 +1,320 @@
+﻿import { Request, Response } from "express";
+import { Meditation, MeditationSession } from "../models/Meditation";
+import { Types } from "mongoose";
+import { logger } from "../utils/logger";
+
+// Get all meditations
+export const getMeditations = async (req: Request, res: Response) => {
+  try {
+    const { category, isPremium, limit = 20, page = 1 } = req.query;
+    
+    const filter: any = {};
+    if (category) filter.category = category;
+    if (isPremium !== undefined) filter.isPremium = isPremium === 'true';
+
+    const skip = (Number(page) - 1) * Number(limit);
+    
+    const meditations = await Meditation.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit))
+      .lean();
+
+    const total = await Meditation.countDocuments(filter);
+
+    res.json({
+      success: true,
+      meditations,
+      pagination: {
+        currentPage: Number(page),
+        totalPages: Math.ceil(total / Number(limit)),
+        totalMeditations: total,
+        hasNextPage: skip + Number(limit) < total,
+        hasPrevPage: Number(page) > 1,
+      },
+    });
+  } catch (error) {
+    logger.error("Error fetching meditations:", error);
+    res.status(500).json({
+      error: "Failed to fetch meditations",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+// Get a specific meditation
+export const getMeditation = async (req: Request, res: Response) => {
+  try {
+    const { meditationId } = req.params;
+    
+    const meditation = await Meditation.findById(meditationId);
+    
+    if (!meditation) {
+      return res.status(404).json({
+        error: "Meditation not found"
+      });
+    }
+
+    res.json({
+      success: true,
+      meditation,
+    });
+  } catch (error) {
+    logger.error("Error fetching meditation:", error);
+    res.status(500).json({
+      error: "Failed to fetch meditation",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+// Create a new meditation
+export const createMeditation = async (req: Request, res: Response) => {
+  try {
+    const { title, description, duration, audioUrl, category, isPremium, tags } = req.body;
+
+    if (!title || !description || !duration || !category) {
+      return res.status(400).json({
+        error: "Title, description, duration, and category are required"
+      });
+    }
+
+    const meditation = new Meditation({
+      title,
+      description,
+      duration,
+      audioUrl,
+      category,
+      isPremium: isPremium || false,
+      tags: tags || [],
+    });
+
+    await meditation.save();
+
+    res.status(201).json({
+      success: true,
+      message: "Meditation created successfully",
+      meditation,
+    });
+  } catch (error) {
+    logger.error("Error creating meditation:", error);
+    res.status(500).json({
+      error: "Failed to create meditation",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+// Start a meditation session
+export const startMeditationSession = async (req: Request, res: Response) => {
+  try {
+    const { meditationId } = req.body;
+    const userId = new Types.ObjectId(req.user.id);
+
+    if (!meditationId) {
+      return res.status(400).json({
+        error: "Meditation ID is required"
+      });
+    }
+
+    // Check if meditation exists
+    const meditation = await Meditation.findById(meditationId);
+    if (!meditation) {
+      return res.status(404).json({
+        error: "Meditation not found"
+      });
+    }
+
+    const session = new MeditationSession({
+      userId,
+      meditationId: new Types.ObjectId(meditationId),
+      completedAt: new Date(),
+      duration: meditation.duration,
+    });
+
+    await session.save();
+
+    res.status(201).json({
+      success: true,
+      message: "Meditation session started",
+      session,
+    });
+  } catch (error) {
+    logger.error("Error starting meditation session:", error);
+    res.status(500).json({
+      error: "Failed to start meditation session",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+// Complete a meditation session
+export const completeMeditationSession = async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const { actualDuration, rating, notes } = req.body;
+    const userId = new Types.ObjectId(req.user.id);
+
+    const session = await MeditationSession.findOneAndUpdate(
+      { _id: sessionId, userId },
+      {
+        actualDuration: actualDuration || 0,
+        rating,
+        notes,
+        completedAt: new Date(),
+      },
+      { new: true }
+    );
+
+    if (!session) {
+      return res.status(404).json({
+        error: "Meditation session not found"
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Meditation session completed",
+      session,
+    });
+  } catch (error) {
+    logger.error("Error completing meditation session:", error);
+    res.status(500).json({
+      error: "Failed to complete meditation session",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+// Get user's meditation history
+export const getMeditationHistory = async (req: Request, res: Response) => {
+  try {
+    const userId = new Types.ObjectId(req.user.id);
+    const { page = 1, limit = 10 } = req.query;
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const sessions = await MeditationSession.find({ userId })
+      .populate('meditationId')
+      .sort({ completedAt: -1 })
+      .skip(skip)
+      .limit(Number(limit))
+      .lean();
+
+    const total = await MeditationSession.countDocuments({ userId });
+
+    res.json({
+      success: true,
+      sessions,
+      pagination: {
+        currentPage: Number(page),
+        totalPages: Math.ceil(total / Number(limit)),
+        totalSessions: total,
+        hasNextPage: skip + Number(limit) < total,
+        hasPrevPage: Number(page) > 1,
+      },
+    });
+  } catch (error) {
+    logger.error("Error fetching meditation history:", error);
+    res.status(500).json({
+      error: "Failed to fetch meditation history",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+// Get meditation analytics
+export const getMeditationAnalytics = async (req: Request, res: Response) => {
+  try {
+    const userId = new Types.ObjectId(req.user.id);
+    const { period = '30' } = req.query; // days
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - Number(period));
+
+    // Get meditation frequency
+    const frequency = await MeditationSession.aggregate([
+      {
+        $match: {
+          userId,
+          completedAt: { $gte: startDate },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: "$completedAt" },
+            month: { $month: "$completedAt" },
+            day: { $dayOfMonth: "$completedAt" },
+          },
+          count: { $sum: 1 },
+          totalDuration: { $sum: "$actualDuration" },
+        },
+      },
+      {
+        $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1 },
+      },
+    ]);
+
+    // Get category preferences
+    const categoryStats = await MeditationSession.aggregate([
+      {
+        $match: {
+          userId,
+          completedAt: { $gte: startDate },
+        },
+      },
+      {
+        $lookup: {
+          from: "meditations",
+          localField: "meditationId",
+          foreignField: "_id",
+          as: "meditation",
+        },
+      },
+      { $unwind: "$meditation" },
+      {
+        $group: {
+          _id: "$meditation.category",
+          count: { $sum: 1 },
+          avgRating: { $avg: "$rating" },
+        },
+      },
+      { $sort: { count: -1 } },
+    ]);
+
+    // Get average session duration
+    const durationStats = await MeditationSession.aggregate([
+      {
+        $match: {
+          userId,
+          completedAt: { $gte: startDate },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          avgDuration: { $avg: "$actualDuration" },
+          totalSessions: { $sum: 1 },
+          totalDuration: { $sum: "$actualDuration" },
+        },
+      },
+    ]);
+
+    res.json({
+      success: true,
+      analytics: {
+        frequency,
+        categoryStats,
+        durationStats: durationStats[0] || { avgDuration: 0, totalSessions: 0, totalDuration: 0 },
+        period: Number(period),
+      },
+    });
+  } catch (error) {
+    logger.error("Error fetching meditation analytics:", error);
+    res.status(500).json({
+      error: "Failed to fetch meditation analytics",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
