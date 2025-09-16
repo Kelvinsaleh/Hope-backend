@@ -5,7 +5,7 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { serve } from 'inngest/express';
 import { inngest } from './inngest/client';
-import { inngestFunctions } from './inngest/functions';
+import { functions } from './inngest/functions';
 
 // Import routes
 import authRoutes from './routes/auth';
@@ -43,7 +43,7 @@ app.use(express.json());
 app.use(morgan("dev"));
 
 // Set up Inngest endpoint
-app.use("/api/inngest", serve({ client: inngest, functions: inngestFunctions }));
+app.use("/api/inngest", serve({ client: inngest, functions }));
 
 // Routes
 app.get("/health", (req, res) => {
