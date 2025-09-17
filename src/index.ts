@@ -16,6 +16,7 @@ import meditationRoutes from './routes/meditation';
 import moodRoutes from './routes/mood';
 import activityRoutes from './routes/activity';
 import rescuePairRoutes from './routes/rescuePairs';
+import { connectDB } from './utils/db';
 
 // Load environment variables
 dotenv.config();
@@ -67,9 +68,16 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 });
 
 // Start server
-app.listen(PORT, () => {
- console.log(`Server is running on port ${PORT}`);
-console.log(`Health check: http://localhost:${PORT}/health`);
-});
+connectDB()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Server is running on port ${PORT}`);
+      console.log(`Health check: http://localhost:${PORT}/health`);
+    });
+  })
+  .catch((err) => {
+    console.error('Failed to connect to database:', err);
+    process.exit(1);
+  });
 
 export default app;
