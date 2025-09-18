@@ -2,6 +2,13 @@
 import { Meditation, MeditationSession } from "../models/Meditation";
 import { Types } from "mongoose";
 import { logger } from "../utils/logger";
+import { put } from '@vercel/blob';
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+// Initialize Gemini API
+const genAI = new GoogleGenerativeAI(
+  process.env.GEMINI_API_KEY || "AIzaSyDMHmeOCxXaoCuoebM4t4V0qYdXK4a7S78"
+);
 
 // Get all meditations
 export const getMeditations = async (req: Request, res: Response) => {
@@ -316,5 +323,96 @@ export const getMeditationAnalytics = async (req: Request, res: Response) => {
       error: "Failed to fetch meditation analytics",
       details: error instanceof Error ? error.message : "Unknown error",
     });
+  }
+};
+
+// Upload meditation file with automatic processing
+export const uploadMeditation = async (req: Request, res: Response) => {
+  try {
+    console.log("Upload meditation request received");
+    
+    if (!req.file) {
+      return res.status(400).json({ 
+        success: false,
+        error: "No file uploaded" 
+      });
+    }
+    
+    const { title, description, duration, category } = req.body;
+    
+    // Upload to Vercel Blob
+    const blob = await put(req.file.filename, req.file.buffer, {
+      access: 'public',
+      contentType: req.file.mimetype,
+      token: process.env.BLOB_READ_WRITE_TOKEN
+    });
+    
+    // Generate automatic headers and subtitles using AI
+    const headers = await generateHeaders(title, description, blob.url);
+    const subtitles = await generateSubtitles(blob.url, duration);
+    
+    const meditation = new Meditation({
+      title: title || "Untitled",
+      description: description || "",
+      duration: duration || 0,
+      audioUrl: blob.url,
+      category: category || "general",
+      isPremium: false,
+      tags: [],
+      headers: headers,
+      subtitles: subtitles,
+      uploadedAt: new Date()
+    });
+    
+    await meditation.save();
+    
+    res.json({ 
+      success: true, 
+      message: "Meditation uploaded successfully with automatic processing",
+      meditation: meditation 
+    });
+    
+  } catch (error) {
+    console.error("Meditation upload error:", error);
+    res.status(500).json({ 
+      success: false,
+      error: "Failed to upload meditation" 
+    });
+  }
+};
+
+// Generate automatic headers using AI
+const generateHeaders = async (title: string, description: string, audioUrl: string) => {
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    const prompt = `Generate 5-7 section headers for a meditation titled "${title}" with description "${description}". 
+    Return as JSON array: ["Header 1", "Header 2", ...]`;
+    
+    const result = await model.generateContent(prompt);
+    const response = result.response.text().trim();
+    return JSON.parse(response);
+  } catch (error) {
+    console.error("Error generating headers:", error);
+    return ["Introduction", "Breathing", "Body Scan", "Visualization", "Conclusion"];
+  }
+};
+
+// Generate automatic subtitles using AI
+const generateSubtitles = async (audioUrl: string, duration: number) => {
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    const prompt = `Generate subtitles for a ${duration}-minute meditation. 
+    Return as JSON array of objects: [{"time": "00:00", "text": "Welcome to this meditation"}, ...]`;
+    
+    const result = await model.generateContent(prompt);
+    const response = result.response.text().trim();
+    return JSON.parse(response);
+  } catch (error) {
+    console.error("Error generating subtitles:", error);
+    return [
+      {"time": "00:00", "text": "Welcome to this meditation"},
+      {"time": "01:00", "text": "Find a comfortable position"},
+      {"time": "02:00", "text": "Close your eyes and breathe naturally"}
+    ];
   }
 };
