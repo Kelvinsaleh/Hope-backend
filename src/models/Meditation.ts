@@ -4,7 +4,7 @@ export interface IMeditation extends Document {
   title: string;
   description: string;
   duration: number; // in minutes
-  audioUrl?: string;
+  audioUrl: string;
   category: string;
   isPremium: boolean;
   tags: string[];
@@ -26,7 +26,7 @@ const MeditationSchema = new Schema<IMeditation>(
     title: { type: String, required: true },
     description: { type: String, required: true },
     duration: { type: Number, required: true },
-    audioUrl: { type: String },
+    audioUrl: { type: String, required: true },
     category: { type: String, required: true },
     isPremium: { type: Boolean, default: false },
     tags: [{ type: String }],
@@ -46,5 +46,5 @@ const MeditationSessionSchema = new Schema<IMeditationSession>(
   { timestamps: true }
 );
 
-export const Meditation = mongoose.model<IMeditation>("Meditation", MeditationSchema);
+export const Meditation = mongoose.models.Meditation || mongoose.model<IMeditation>("Meditation", MeditationSchema);
 export const MeditationSession = mongoose.model<IMeditationSession>("MeditationSession", MeditationSessionSchema);
