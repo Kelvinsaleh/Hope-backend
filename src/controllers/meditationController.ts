@@ -10,12 +10,22 @@ const genAI = new GoogleGenerativeAI(
   process.env.GEMINI_API_KEY || "AIzaSyDMHmeOCxXaoCuoebM4t4V0qYdXK4a7S78"
 );
 
-// Get all meditations
+// Get all meditations with search
 export const getMeditations = async (req: Request, res: Response) => {
   try {
-    const { category, isPremium, limit = 20, page = 1 } = req.query;
+    const { search, category, isPremium, limit = 20, page = 1 } = req.query;
     
     const filter: any = {};
+    
+    // Add search functionality
+    if (search) {
+      filter.$or = [
+        { title: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
+        { tags: { $in: [new RegExp(search as string, "i")] } }
+      ];
+    }
+    
     if (category) filter.category = category;
     if (isPremium !== undefined) filter.isPremium = isPremium === 'true';
 
@@ -49,10 +59,54 @@ export const getMeditations = async (req: Request, res: Response) => {
   }
 };
 
+// Get meditation sessions (fix the route conflict)
+export const getMeditationSessions = async (req: Request, res: Response) => {
+  try {
+    const userId = new Types.ObjectId(req.user._id);
+    const { page = 1, limit = 10 } = req.query;
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const sessions = await MeditationSession.find({ userId })
+      .populate('meditationId')
+      .sort({ completedAt: -1 })
+      .skip(skip)
+      .limit(Number(limit))
+      .lean();
+
+    const total = await MeditationSession.countDocuments({ userId });
+
+    res.json({
+      success: true,
+      sessions,
+      pagination: {
+        currentPage: Number(page),
+        totalPages: Math.ceil(total / Number(limit)),
+        totalSessions: total,
+        hasNextPage: skip + Number(limit) < total,
+        hasPrevPage: Number(page) > 1,
+      },
+    });
+  } catch (error) {
+    logger.error("Error fetching meditation sessions:", error);
+    res.status(500).json({
+      error: "Failed to fetch meditation sessions",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
 // Get a specific meditation
 export const getMeditation = async (req: Request, res: Response) => {
   try {
     const { meditationId } = req.params;
+    
+    // Validate ObjectId format
+    if (!Types.ObjectId.isValid(meditationId)) {
+      return res.status(400).json({
+        error: "Invalid meditation ID format"
+      });
+    }
     
     const meditation = await Meditation.findById(meditationId);
     
