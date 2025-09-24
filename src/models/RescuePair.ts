@@ -3,7 +3,7 @@ import mongoose, { Document, Schema } from "mongoose";
 export interface IRescuePair extends Document {
   user1Id: mongoose.Types.ObjectId;
   user2Id: mongoose.Types.ObjectId;
-  status: "pending" | "active" | "paused" | "ended";
+  status: "pending" | "active" | "paused" | "ended" | "rejected";
   compatibilityScore: number; // 0-100
   sharedChallenges: string[];
   complementaryGoals: string[];
@@ -17,6 +17,8 @@ export interface IRescuePair extends Document {
   matchDate: Date;
   safetyScore: number; // 1-10
   isVerified: boolean;
+  acceptedAt?: Date;
+  endedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -27,7 +29,7 @@ const RescuePairSchema = new Schema<IRescuePair>(
     user2Id: { type: Schema.Types.ObjectId, ref: "User", required: true },
     status: { 
       type: String, 
-      enum: ["pending", "active", "paused", "ended"], 
+      enum: ["pending", "active", "paused", "ended", "rejected"], 
       default: "pending" 
     },
     compatibilityScore: { type: Number, min: 0, max: 100, default: 0 },
@@ -51,6 +53,8 @@ const RescuePairSchema = new Schema<IRescuePair>(
     matchDate: { type: Date, default: Date.now },
     safetyScore: { type: Number, min: 1, max: 10, default: 5 },
     isVerified: { type: Boolean, default: false },
+    acceptedAt: { type: Date },
+    endedAt: { type: Date },
   },
   { timestamps: true }
 );

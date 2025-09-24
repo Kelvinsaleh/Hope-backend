@@ -16,6 +16,7 @@ import rescuePairRoutes from './routes/rescuePairs';
 import subscriptionRoutes from './routes/subscription';
 import analyticsRoutes from './routes/analytics';
 import { connectDB } from './utils/db';
+import { healthCheck, readinessCheck } from './controllers/healthController';
 
 // Load environment variables
 dotenv.config();
@@ -43,10 +44,9 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(morgan("dev"));
 
-// Routes
-app.get("/health", (req, res) => {
-  res.json({ status: "ok", message: "Server is running", timestamp: new Date().toISOString() });
-});
+// Health check routes
+app.get("/health", healthCheck);
+app.get("/ready", readinessCheck);
 
 // API routes
 app.use("/auth", authRoutes);

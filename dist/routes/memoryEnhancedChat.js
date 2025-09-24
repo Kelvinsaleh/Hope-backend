@@ -1,0 +1,15 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const memoryEnhancedChat_1 = require("../controllers/memoryEnhancedChat");
+const auth_1 = require("../middleware/auth");
+const rateLimiter_1 = require("../middleware/rateLimiter");
+const router = express_1.default.Router();
+// All routes require authentication
+router.use(auth_1.authenticateToken);
+// Memory-enhanced chat route with rate limiting
+router.post("/", rateLimiter_1.aiChatRateLimiter.middleware(), memoryEnhancedChat_1.sendMemoryEnhancedMessage);
+exports.default = router;
