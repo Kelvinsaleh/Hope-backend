@@ -14,6 +14,7 @@ import moodRoutes from './routes/mood';
 import activityRoutes from './routes/activity';
 import rescuePairRoutes from './routes/rescuePairs';
 import subscriptionRoutes from './routes/subscription';
+import paymentRoutes from './routes/payments';
 import analyticsRoutes from './routes/analytics';
 import { connectDB } from './utils/db';
 import { healthCheck, readinessCheck } from './controllers/healthController';
@@ -58,6 +59,7 @@ app.use("/mood", moodRoutes);
 app.use("/activity", activityRoutes);
 app.use("/rescue-pairs", rescuePairRoutes);
 app.use("/subscription", subscriptionRoutes);
+app.use("/payments", paymentRoutes);
 app.use("/analytics", analyticsRoutes);
 
 // Error handling middleware
@@ -75,7 +77,7 @@ connectDB()
     });
   })
   .catch((err) => {
-    console.error('Failed to connect to database:', err);
+    console.error("Failed to connect to database:", err);
     process.exit(1);
   });
 
