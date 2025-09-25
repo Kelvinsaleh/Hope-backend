@@ -470,3 +470,82 @@ export const getMeditationAnalytics = async (req: Request, res: Response) => {
     });
   }
 };
+
+// Update meditation (admin only)
+export const updateMeditation = async (req: Request, res: Response) => {
+  try {
+    const { meditationId } = req.params;
+    const updates = req.body;
+
+    if (!Types.ObjectId.isValid(meditationId)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid meditation ID"
+      });
+    }
+
+    const meditation = await Meditation.findByIdAndUpdate(
+      meditationId,
+      { ...updates, updatedAt: new Date() },
+      { new: true, runValidators: true }
+    );
+
+    if (!meditation) {
+      return res.status(404).json({
+        success: false,
+        error: "Meditation not found"
+      });
+    }
+
+    res.json({
+      success: true,
+      meditation,
+      message: "Meditation updated successfully"
+    });
+  } catch (error) {
+    logger.error("Error updating meditation:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to update meditation",
+      details: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+};
+
+// Delete meditation (admin only)
+export const deleteMeditation = async (req: Request, res: Response) => {
+  try {
+    const { meditationId } = req.params;
+
+    if (!Types.ObjectId.isValid(meditationId)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid meditation ID"
+      });
+    }
+
+    const meditation = await Meditation.findByIdAndDelete(meditationId);
+
+    if (!meditation) {
+      return res.status(404).json({
+        success: false,
+        error: "Meditation not found"
+      });
+    }
+
+    // Also delete related meditation sessions
+    await MeditationSession.deleteMany({ meditationId: new Types.ObjectId(meditationId) });
+
+    res.json({
+      success: true,
+      message: "Meditation and related sessions deleted successfully"
+    });
+  } catch (error) {
+    logger.error("Error deleting meditation:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to delete meditation",
+      details: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+};

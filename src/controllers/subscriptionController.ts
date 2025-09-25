@@ -6,7 +6,7 @@ import { logger } from "../utils/logger";
 
 export const getSubscriptionStatus = async (req: Request, res: Response) => {
   try {
-    const userId = new Types.ObjectId(req.user.id);
+    const userId = new Types.ObjectId(req.user._id);
 
     const activeSubscription = await Subscription.findOne({
       userId,
@@ -41,7 +41,7 @@ export const getSubscriptionStatus = async (req: Request, res: Response) => {
 
 export const createSubscription = async (req: Request, res: Response) => {
   try {
-    const userId = new Types.ObjectId(req.user.id);
+    const userId = new Types.ObjectId(req.user._id);
     const { planId, planName, amount, currency } = req.body;
 
     const subscription = new Subscription({
@@ -77,7 +77,7 @@ export const createSubscription = async (req: Request, res: Response) => {
 export const updateSubscription = async (req: Request, res: Response) => {
   try {
     const { subscriptionId } = req.params;
-    const userId = new Types.ObjectId(req.user.id);
+    const userId = new Types.ObjectId(req.user._id);
     const updates = req.body;
 
     const subscription = await Subscription.findOneAndUpdate(
@@ -111,7 +111,7 @@ export const updateSubscription = async (req: Request, res: Response) => {
 export const checkPremiumAccess = async (req: Request, res: Response) => {
   try {
     const { feature } = req.params;
-    const userId = new Types.ObjectId(req.user.id);
+    const userId = new Types.ObjectId(req.user._id);
 
     const activeSubscription = await Subscription.findOne({
       userId,
