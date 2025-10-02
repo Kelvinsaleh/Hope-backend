@@ -140,3 +140,52 @@ export const checkPremiumAccess = async (req: Request, res: Response) => {
     });
   }
 };
+
+// Update user tier after successful payment
+export const updateUserTier = async (req: Request, res: Response) => {
+  try {
+    const { userId, tier, subscriptionId, planId } = req.body;
+    const userObjectId = new Types.ObjectId(userId);
+
+    // Update user subscription status
+    await User.findByIdAndUpdate(userObjectId, {
+      $set: {
+        'subscription.isActive': tier === 'premium',
+        'subscription.tier': tier,
+        'subscription.subscriptionId': subscriptionId,
+        'subscription.planId': planId,
+        'subscription.activatedAt': new Date()
+      }
+    });
+
+    // If activating premium, also update/create subscription record
+    if (tier === 'premium' && subscriptionId) {
+      await Subscription.findByIdAndUpdate(subscriptionId, {
+        $set: {
+          status: 'active',
+          activatedAt: new Date()
+        }
+      }, { upsert: true });
+    }
+
+    logger.info(`User tier updated: ${userId} -> ${tier}`);
+
+    res.json({
+      success: true,
+      message: `User tier updated to ${tier}`,
+      data: {
+        userId,
+        tier,
+        subscriptionId,
+        activatedAt: new Date()
+      }
+    });
+
+  } catch (error) {
+    logger.error("Error updating user tier:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to update user tier"
+    });
+  }
+};

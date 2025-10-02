@@ -17,6 +17,10 @@ import rescuePairRoutes from './routes/rescuePairs';
 import subscriptionRoutes from './routes/subscription';
 import paymentRoutes from './routes/payments';
 import analyticsRoutes from './routes/analytics';
+import safetyRoutes from './routes/safety';
+import crisisRoutes from './routes/crisis';
+import videoCallRoutes from './routes/videoCall';
+import realtimeRoutes from './routes/realtime';
 import { connectDB } from './utils/db';
 import { healthCheck, readinessCheck } from './controllers/healthController';
 
@@ -66,7 +70,7 @@ app.get("/ready", readinessCheck);
 // API routes
 app.use("/auth", authRoutes);
 app.use("/chat", chatRoutes);
-app.use("/chat/memory-enhanced", memoryEnhancedChatRoutes);
+app.use("/memory-enhanced-chat", memoryEnhancedChatRoutes);
 app.use("/journal", journalRoutes);
 app.use("/meditation", meditationRoutes);
 app.use("/mood", moodRoutes);
@@ -75,6 +79,10 @@ app.use("/rescue-pairs", rescuePairRoutes);
 app.use("/subscription", subscriptionRoutes);
 app.use("/payments", paymentRoutes);
 app.use("/analytics", analyticsRoutes);
+app.use("/safety", safetyRoutes);
+app.use("/crisis", crisisRoutes);
+app.use("/video-calls", videoCallRoutes);
+app.use("/realtime", realtimeRoutes);
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

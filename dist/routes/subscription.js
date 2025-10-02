@@ -9,8 +9,11 @@ const auth_1 = require("../middleware/auth");
 const router = express_1.default.Router();
 // All routes require authentication
 router.use(auth_1.authenticateToken);
+// Subscription routes
 router.get("/status", subscriptionController_1.getSubscriptionStatus);
 router.post("/", subscriptionController_1.createSubscription);
 router.put("/:subscriptionId", subscriptionController_1.updateSubscription);
-router.get("/access/:feature", subscriptionController_1.checkPremiumAccess);
+router.get("/premium/:feature", subscriptionController_1.checkPremiumAccess);
+// User tier management
+router.post("/update-tier", subscriptionController_1.updateUserTier);
 exports.default = router;

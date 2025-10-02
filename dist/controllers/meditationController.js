@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getMeditationAnalytics = exports.getMeditationHistory = exports.completeMeditationSession = exports.startMeditationSession = exports.uploadMeditation = exports.createMeditation = exports.getMeditation = exports.getMeditationSessions = exports.getMeditations = void 0;
+exports.deleteMeditation = exports.updateMeditation = exports.getMeditationAnalytics = exports.getMeditationHistory = exports.completeMeditationSession = exports.startMeditationSession = exports.uploadMeditation = exports.createMeditation = exports.getMeditation = exports.getMeditationSessions = exports.getMeditations = void 0;
 const Meditation_1 = require("../models/Meditation");
 const mongoose_1 = require("mongoose");
 const logger_1 = require("../utils/logger");
@@ -430,3 +430,71 @@ const getMeditationAnalytics = async (req, res) => {
     }
 };
 exports.getMeditationAnalytics = getMeditationAnalytics;
+// Update meditation (admin only)
+const updateMeditation = async (req, res) => {
+    try {
+        const { meditationId } = req.params;
+        const updates = req.body;
+        if (!mongoose_1.Types.ObjectId.isValid(meditationId)) {
+            return res.status(400).json({
+                success: false,
+                error: "Invalid meditation ID"
+            });
+        }
+        const meditation = await Meditation_1.Meditation.findByIdAndUpdate(meditationId, { ...updates, updatedAt: new Date() }, { new: true, runValidators: true });
+        if (!meditation) {
+            return res.status(404).json({
+                success: false,
+                error: "Meditation not found"
+            });
+        }
+        res.json({
+            success: true,
+            meditation,
+            message: "Meditation updated successfully"
+        });
+    }
+    catch (error) {
+        logger_1.logger.error("Error updating meditation:", error);
+        res.status(500).json({
+            success: false,
+            error: "Failed to update meditation",
+            details: error instanceof Error ? error.message : "Unknown error"
+        });
+    }
+};
+exports.updateMeditation = updateMeditation;
+// Delete meditation (admin only)
+const deleteMeditation = async (req, res) => {
+    try {
+        const { meditationId } = req.params;
+        if (!mongoose_1.Types.ObjectId.isValid(meditationId)) {
+            return res.status(400).json({
+                success: false,
+                error: "Invalid meditation ID"
+            });
+        }
+        const meditation = await Meditation_1.Meditation.findByIdAndDelete(meditationId);
+        if (!meditation) {
+            return res.status(404).json({
+                success: false,
+                error: "Meditation not found"
+            });
+        }
+        // Also delete related meditation sessions
+        await Meditation_1.MeditationSession.deleteMany({ meditationId: new mongoose_1.Types.ObjectId(meditationId) });
+        res.json({
+            success: true,
+            message: "Meditation and related sessions deleted successfully"
+        });
+    }
+    catch (error) {
+        logger_1.logger.error("Error deleting meditation:", error);
+        res.status(500).json({
+            success: false,
+            error: "Failed to delete meditation",
+            details: error instanceof Error ? error.message : "Unknown error"
+        });
+    }
+};
+exports.deleteMeditation = deleteMeditation;

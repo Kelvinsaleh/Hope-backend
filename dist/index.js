@@ -8,6 +8,7 @@ const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
 const morgan_1 = __importDefault(require("morgan"));
 const dotenv_1 = __importDefault(require("dotenv"));
+const logger_1 = require("./utils/logger");
 // Import routes
 const auth_1 = __importDefault(require("./routes/auth"));
 const chat_1 = __importDefault(require("./routes/chat"));
@@ -18,7 +19,12 @@ const mood_1 = __importDefault(require("./routes/mood"));
 const activity_1 = __importDefault(require("./routes/activity"));
 const rescuePairs_1 = __importDefault(require("./routes/rescuePairs"));
 const subscription_1 = __importDefault(require("./routes/subscription"));
+const payments_1 = __importDefault(require("./routes/payments"));
 const analytics_1 = __importDefault(require("./routes/analytics"));
+const safety_1 = __importDefault(require("./routes/safety"));
+const crisis_1 = __importDefault(require("./routes/crisis"));
+const videoCall_1 = __importDefault(require("./routes/videoCall"));
+const realtime_1 = __importDefault(require("./routes/realtime"));
 const db_1 = require("./utils/db");
 const healthController_1 = require("./controllers/healthController");
 // Load environment variables
@@ -41,37 +47,86 @@ const corsOptions = {
 // Middleware
 app.use((0, helmet_1.default)());
 app.use((0, cors_1.default)(corsOptions));
-app.use(express_1.default.json());
-app.use((0, morgan_1.default)("dev"));
+app.use(express_1.default.json({ limit: '10mb' }));
+app.use(express_1.default.urlencoded({ extended: true, limit: '10mb' }));
+// Custom morgan format for better logging
+const morganFormat = process.env.NODE_ENV === 'production'
+    ? 'combined'
+    : 'dev';
+app.use((0, morgan_1.default)(morganFormat, {
+    stream: {
+        write: (message) => {
+            logger_1.logger.info(message.trim());
+        }
+    }
+}));
 // Health check routes
 app.get("/health", healthController_1.healthCheck);
 app.get("/ready", healthController_1.readinessCheck);
 // API routes
 app.use("/auth", auth_1.default);
 app.use("/chat", chat_1.default);
-app.use("/chat/memory-enhanced", memoryEnhancedChat_1.default);
+app.use("/memory-enhanced-chat", memoryEnhancedChat_1.default);
 app.use("/journal", journal_1.default);
 app.use("/meditation", meditation_1.default);
 app.use("/mood", mood_1.default);
 app.use("/activity", activity_1.default);
 app.use("/rescue-pairs", rescuePairs_1.default);
 app.use("/subscription", subscription_1.default);
+app.use("/payments", payments_1.default);
 app.use("/analytics", analytics_1.default);
+app.use("/safety", safety_1.default);
+app.use("/crisis", crisis_1.default);
+app.use("/video-calls", videoCall_1.default);
+app.use("/realtime", realtime_1.default);
 // Error handling middleware
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ error: 'Something went wrong!' });
+    logger_1.logger.error('Unhandled error:', {
+        error: err.message,
+        stack: err.stack,
+        url: req.url,
+        method: req.method,
+        ip: req.ip
+    });
+    res.status(500).json({
+        success: false,
+        error: process.env.NODE_ENV === 'production'
+            ? 'Internal server error'
+            : err.message
+    });
+});
+// 404 handler
+app.use('*', (req, res) => {
+    logger_1.logger.warn('Route not found:', {
+        url: req.url,
+        method: req.method,
+        ip: req.ip
+    });
+    res.status(404).json({
+        success: false,
+        error: 'Route not found'
+    });
+});
+// Graceful shutdown
+process.on('SIGTERM', () => {
+    logger_1.logger.info('SIGTERM received, shutting down gracefully');
+    process.exit(0);
+});
+process.on('SIGINT', () => {
+    logger_1.logger.info('SIGINT received, shutting down gracefully');
+    process.exit(0);
 });
 // Start server
 (0, db_1.connectDB)()
     .then(() => {
     app.listen(PORT, () => {
-        console.log(`Server is running on port ${PORT}`);
-        console.log(`Health check: http://localhost:${PORT}/health`);
+        logger_1.logger.info(`🚀 Server is running on port ${PORT}`);
+        logger_1.logger.info(`📊 Health check: http://localhost:${PORT}/health`);
+        logger_1.logger.info(` Environment: ${process.env.NODE_ENV || 'development'}`);
     });
 })
     .catch((err) => {
-    console.error('Failed to connect to database:', err);
+    logger_1.logger.error("Failed to connect to database:", err);
     process.exit(1);
 });
 exports.default = app;

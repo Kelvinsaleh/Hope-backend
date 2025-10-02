@@ -1,8 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getRescuePairDetails = exports.updateRescuePairStatus = exports.getUserRescuePairs = exports.rejectRescuePair = exports.acceptRescuePair = exports.createRescuePair = exports.findMatches = void 0;
+exports.getActiveMatches = exports.acceptMatchEnhanced = exports.findMatchesEnhanced = exports.getRescuePairDetails = exports.updateRescuePairStatus = exports.getUserRescuePairs = exports.rejectRescuePair = exports.acceptRescuePair = exports.createRescuePair = exports.findMatches = void 0;
 const UserProfile_1 = require("../models/UserProfile");
 const RescuePair_1 = require("../models/RescuePair");
+const User_1 = require("../models/User");
 const mongoose_1 = require("mongoose");
 const logger_1 = require("../utils/logger");
 // Calculate compatibility score between two users
@@ -41,7 +42,7 @@ const calculateCompatibility = (profile1, profile2) => {
 // Find potential rescue pair matches
 const findMatches = async (req, res) => {
     try {
-        const userId = new mongoose_1.Types.ObjectId(req.user.id);
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
         // Get current user profile
         const userProfile = await UserProfile_1.UserProfile.findOne({ userId }).lean();
         if (!userProfile) {
@@ -61,7 +62,7 @@ const findMatches = async (req, res) => {
             .populate("user1Id", "name email")
             .populate("user2Id", "name email")
             .lean();
-        // Find potential new matches - remove .lean() to avoid type issues
+        // Find potential new matches
         const potentialMatches = await UserProfile_1.UserProfile.find({
             userId: { $ne: userId },
             isVerified: true,
@@ -110,7 +111,7 @@ exports.findMatches = findMatches;
 const createRescuePair = async (req, res) => {
     try {
         const { targetUserId } = req.body;
-        const userId = new mongoose_1.Types.ObjectId(req.user.id);
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
         if (!targetUserId) {
             return res.status(400).json({
                 success: false,
@@ -161,7 +162,7 @@ exports.createRescuePair = createRescuePair;
 const acceptRescuePair = async (req, res) => {
     try {
         const { pairId } = req.params;
-        const userId = new mongoose_1.Types.ObjectId(req.user.id);
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
         const rescuePair = await RescuePair_1.RescuePair.findOne({
             _id: pairId,
             user2Id: userId,
@@ -198,7 +199,7 @@ exports.acceptRescuePair = acceptRescuePair;
 const rejectRescuePair = async (req, res) => {
     try {
         const { pairId } = req.params;
-        const userId = new mongoose_1.Types.ObjectId(req.user.id);
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
         const rescuePair = await RescuePair_1.RescuePair.findOne({
             _id: pairId,
             user2Id: userId,
@@ -229,7 +230,7 @@ exports.rejectRescuePair = rejectRescuePair;
 // Get user's rescue pairs
 const getUserRescuePairs = async (req, res) => {
     try {
-        const userId = new mongoose_1.Types.ObjectId(req.user.id);
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
         const rescuePairs = await RescuePair_1.RescuePair.find({
             $or: [
                 { user1Id: userId },
@@ -259,7 +260,7 @@ const updateRescuePairStatus = async (req, res) => {
     try {
         const { pairId } = req.params;
         const { status } = req.body;
-        const userId = new mongoose_1.Types.ObjectId(req.user.id);
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
         const validStatuses = ["active", "paused", "ended"];
         if (!validStatuses.includes(status)) {
             return res.status(400).json({
@@ -307,7 +308,7 @@ exports.updateRescuePairStatus = updateRescuePairStatus;
 const getRescuePairDetails = async (req, res) => {
     try {
         const { pairId } = req.params;
-        const userId = new mongoose_1.Types.ObjectId(req.user.id);
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
         const rescuePair = await RescuePair_1.RescuePair.findOne({
             _id: pairId,
             $or: [
@@ -338,3 +339,198 @@ const getRescuePairDetails = async (req, res) => {
     }
 };
 exports.getRescuePairDetails = getRescuePairDetails;
+// Find potential rescue pair matches with AI scoring
+const findMatchesEnhanced = async (req, res) => {
+    try {
+        const { preferences, maxResults = 10 } = req.body;
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
+        // Get current user profile
+        const userProfile = await UserProfile_1.UserProfile.findOne({ userId })
+            .populate('userId', 'name email createdAt')
+            .lean();
+        if (!userProfile) {
+            return res.status(404).json({
+                success: false,
+                error: "User profile not found. Please complete your profile first."
+            });
+        }
+        // Get blocked users to exclude
+        const user = await User_1.User.findById(userId).select('blockedUsers').lean();
+        const blockedUserIds = user?.blockedUsers || [];
+        // Get existing matches to exclude
+        const existingMatches = await RescuePair_1.RescuePair.find({
+            $or: [{ user1Id: userId }, { user2Id: userId }],
+            status: { $in: ["active", "pending", "accepted"] }
+        }).select('user1Id user2Id').lean();
+        const existingMatchIds = existingMatches.flatMap(match => [match.user1Id.toString(), match.user2Id.toString()]).filter(id => id !== userId.toString());
+        // Find potential matches with enhanced criteria
+        const potentialMatches = await UserProfile_1.UserProfile.find({
+            userId: {
+                $ne: userId,
+                $nin: [...blockedUserIds, ...existingMatchIds.map(id => new mongoose_1.Types.ObjectId(id))]
+            },
+            isVerified: true,
+            status: { $in: ["online", "away"] },
+            ...(preferences?.ageRange && {
+                age: {
+                    $gte: preferences.ageRange[0] || 18,
+                    $lte: preferences.ageRange[1] || 100
+                }
+            }),
+            ...(preferences?.experienceLevel && {
+                experienceLevel: preferences.experienceLevel
+            }),
+            ...(preferences?.communicationStyle && {
+                communicationStyle: preferences.communicationStyle
+            })
+        })
+            .populate('userId', 'name email lastActive createdAt')
+            .limit(maxResults * 2) // Get more to filter by compatibility
+            .lean();
+        // Calculate enhanced compatibility scores
+        const matchesWithScores = potentialMatches.map(match => {
+            const matchProfile = match; // Type assertion for populated fields
+            const compatibility = calculateCompatibility(userProfile, matchProfile);
+            const sharedChallenges = userProfile.challenges.filter((c) => matchProfile.challenges.includes(c));
+            const complementaryGoals = userProfile.goals.filter((g) => matchProfile.goals.includes(g));
+            return {
+                id: matchProfile.userId._id,
+                name: matchProfile.userId.name,
+                age: matchProfile.age,
+                challenges: matchProfile.challenges,
+                goals: matchProfile.goals,
+                experienceLevel: matchProfile.experienceLevel,
+                communicationStyle: matchProfile.communicationStyle,
+                compatibility,
+                sharedChallenges,
+                complementaryGoals,
+                lastActive: matchProfile.userId.lastActive || matchProfile.userId.createdAt,
+                profileImage: matchProfile.profileImage,
+                bio: matchProfile.bio || `Someone who shares ${sharedChallenges.length} similar challenges and understands your journey.`,
+                safetyScore: matchProfile.safetyScore || 95,
+                timezone: matchProfile.timezone,
+                isVerified: matchProfile.isVerified
+            };
+        })
+            .filter(match => match.compatibility >= 60) // Minimum 60% compatibility
+            .sort((a, b) => b.compatibility - a.compatibility)
+            .slice(0, maxResults);
+        logger_1.logger.info(`Found ${matchesWithScores.length} compatible matches for user ${userId}`);
+        res.json({
+            success: true,
+            data: matchesWithScores,
+            currentUser: {
+                id: userProfile.userId._id,
+                name: userProfile.userId.name,
+                challenges: userProfile.challenges,
+                goals: userProfile.goals,
+                experienceLevel: userProfile.experienceLevel,
+                communicationStyle: userProfile.communicationStyle,
+                age: userProfile.age
+            },
+            message: `Found ${matchesWithScores.length} compatible matches`
+        });
+    }
+    catch (error) {
+        logger_1.logger.error("Error finding enhanced matches:", error);
+        res.status(500).json({
+            success: false,
+            error: "Failed to find matches. Please try again."
+        });
+    }
+};
+exports.findMatchesEnhanced = findMatchesEnhanced;
+// Accept a match and create chat session
+const acceptMatchEnhanced = async (req, res) => {
+    try {
+        const { matchId, acceptedAt } = req.body;
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
+        const targetUserId = new mongoose_1.Types.ObjectId(matchId);
+        // Check if users are already matched
+        const existingMatch = await RescuePair_1.RescuePair.findOne({
+            $or: [
+                { user1Id: userId, user2Id: targetUserId },
+                { user1Id: targetUserId, user2Id: userId }
+            ]
+        });
+        if (existingMatch) {
+            return res.status(400).json({
+                success: false,
+                error: "You are already matched with this user"
+            });
+        }
+        // Create new rescue pair
+        const rescuePair = new RescuePair_1.RescuePair({
+            user1Id: userId,
+            user2Id: targetUserId,
+            status: "accepted",
+            acceptedAt: acceptedAt || new Date(),
+            createdAt: new Date(),
+            matchingScore: req.body.compatibility || 0,
+            sharedChallenges: req.body.sharedChallenges || [],
+            complementaryGoals: req.body.complementaryGoals || []
+        });
+        await rescuePair.save();
+        // Populate user details
+        await rescuePair.populate([
+            { path: 'user1Id', select: 'name email' },
+            { path: 'user2Id', select: 'name email' }
+        ]);
+        logger_1.logger.info(`Match accepted: ${userId} <-> ${targetUserId}`);
+        res.json({
+            success: true,
+            data: rescuePair,
+            message: "Match accepted successfully!"
+        });
+    }
+    catch (error) {
+        logger_1.logger.error("Error accepting match:", error);
+        res.status(500).json({
+            success: false,
+            error: "Failed to accept match"
+        });
+    }
+};
+exports.acceptMatchEnhanced = acceptMatchEnhanced;
+// Get active matches for a user
+const getActiveMatches = async (req, res) => {
+    try {
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
+        const activeMatches = await RescuePair_1.RescuePair.find({
+            $or: [{ user1Id: userId }, { user2Id: userId }],
+            status: "accepted"
+        })
+            .populate('user1Id', 'name email lastActive')
+            .populate('user2Id', 'name email lastActive')
+            .sort({ acceptedAt: -1 })
+            .lean();
+        const formattedMatches = activeMatches.map(match => {
+            const matchData = match; // Type assertion for populated fields
+            const isUser1 = matchData.user1Id._id.toString() === userId.toString();
+            const partner = isUser1 ? matchData.user2Id : matchData.user1Id;
+            return {
+                id: matchData._id,
+                matchId: matchData._id,
+                partnerId: partner._id,
+                partnerName: partner.name,
+                status: matchData.status,
+                acceptedAt: matchData.acceptedAt,
+                lastActive: partner.lastActive,
+                sharedChallenges: matchData.sharedChallenges || [],
+                complementaryGoals: matchData.complementaryGoals || []
+            };
+        });
+        res.json({
+            success: true,
+            data: formattedMatches
+        });
+    }
+    catch (error) {
+        logger_1.logger.error("Error getting active matches:", error);
+        res.status(500).json({
+            success: false,
+            error: "Failed to get active matches"
+        });
+    }
+};
+exports.getActiveMatches = getActiveMatches;

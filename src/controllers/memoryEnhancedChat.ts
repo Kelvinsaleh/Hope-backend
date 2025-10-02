@@ -1,4 +1,4 @@
-﻿import { Request, Response } from "express";
+import { Request, Response } from "express";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { ChatSession } from "../models/ChatSession";
 import { JournalEntry } from "../models/JournalEntry";
@@ -8,10 +8,11 @@ import { User } from "../models/User";
 import { logger } from "../utils/logger";
 import { Types } from "mongoose";
 
-// Initialize Gemini API
-const genAI = new GoogleGenerativeAI(
-  process.env.GEMINI_API_KEY || "AIzaSyDMHmeOCxXaoCuoebM4t4V0qYdXK4a7S78"
-);
+// Initialize Gemini API - REQUIRES environment variable
+if (!process.env.GEMINI_API_KEY) {
+  throw new Error('GEMINI_API_KEY environment variable is required. Please set it in your .env file.');
+}
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Rate limiting configuration
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute

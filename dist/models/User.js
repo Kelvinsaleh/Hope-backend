@@ -39,5 +39,27 @@ const UserSchema = new mongoose_1.Schema({
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
+    lastActive: { type: Date, default: Date.now },
+    status: {
+        type: String,
+        enum: ['online', 'away', 'offline', 'suspended'],
+        default: 'offline'
+    },
+    subscription: {
+        isActive: { type: Boolean, default: false },
+        tier: { type: String, enum: ['free', 'premium'], default: 'free' },
+        subscriptionId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Subscription' },
+        planId: { type: String },
+        activatedAt: { type: Date },
+        expiresAt: { type: Date }
+    },
+    blockedUsers: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }],
+    suspendedAt: { type: Date },
+    suspensionReason: { type: String },
+    suspensionDuration: { type: String }
 }, { timestamps: true });
+// Index for performance
+UserSchema.index({ email: 1 });
+UserSchema.index({ 'subscription.isActive': 1 });
+UserSchema.index({ status: 1 });
 exports.User = mongoose_1.default.model("User", UserSchema);

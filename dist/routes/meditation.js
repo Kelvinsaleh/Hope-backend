@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const meditationController_1 = require("../controllers/meditationController");
 const auth_1 = require("../middleware/auth");
+const adminAuth_1 = require("../middleware/adminAuth");
 const multer_1 = __importDefault(require("multer"));
 const router = express_1.default.Router();
 // Configure multer for file uploads
@@ -22,10 +23,13 @@ router.use(auth_1.authenticateToken);
 router.get("/sessions", meditationController_1.getMeditationSessions); // This must come before /:meditationId
 router.get("/history", meditationController_1.getMeditationHistory);
 router.get("/analytics", meditationController_1.getMeditationAnalytics);
+// Admin-only routes
+router.post("/", adminAuth_1.requireAdmin, meditationController_1.createMeditation);
+router.post("/upload", adminAuth_1.requireAdmin, upload.single('file'), meditationController_1.uploadMeditation);
+router.put("/:meditationId", adminAuth_1.requireAdmin, meditationController_1.updateMeditation);
+router.delete("/:meditationId", adminAuth_1.requireAdmin, meditationController_1.deleteMeditation);
 // Parameterized routes LAST
 router.get("/:meditationId", meditationController_1.getMeditation);
-router.post("/", meditationController_1.createMeditation);
-router.post("/upload", upload.single('file'), meditationController_1.uploadMeditation);
 router.post("/sessions", meditationController_1.startMeditationSession);
 router.put("/sessions/:sessionId", meditationController_1.completeMeditationSession);
 exports.default = router;
