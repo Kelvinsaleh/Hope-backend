@@ -9,8 +9,8 @@ import {
   removeMeditationFromPlaylist,
   getPublicPlaylists,
   forkPlaylist,
-} from "@/controllers/playlistController";
-import { authenticateToken } from "@/middleware/auth";
+} from "../controllers/playlistController";
+import { authenticateToken } from "../middleware/auth";
 
 const router = express.Router();
 
