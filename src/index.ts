@@ -21,6 +21,7 @@ import safetyRoutes from './routes/safety';
 import crisisRoutes from './routes/crisis';
 import videoCallRoutes from './routes/videoCall';
 import realtimeRoutes from './routes/realtime';
+import playlistRoutes from './routes/playlist';
 import { connectDB } from './utils/db';
 import { healthCheck, readinessCheck } from './controllers/healthController';
 
@@ -83,6 +84,7 @@ app.use("/safety", safetyRoutes);
 app.use("/crisis", crisisRoutes);
 app.use("/video-calls", videoCallRoutes);
 app.use("/realtime", realtimeRoutes);
+app.use("/playlists", playlistRoutes);
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
