@@ -9,8 +9,11 @@ const Meditation_1 = require("../models/Meditation");
 const User_1 = require("../models/User");
 const logger_1 = require("../utils/logger");
 const mongoose_1 = require("mongoose");
-// Initialize Gemini API
-const genAI = new generative_ai_1.GoogleGenerativeAI(process.env.GEMINI_API_KEY || "AIzaSyDMHmeOCxXaoCuoebM4t4V0qYdXK4a7S78");
+// Initialize Gemini API - REQUIRES environment variable
+if (!process.env.GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY environment variable is required. Please set it in your .env file.');
+}
+const genAI = new generative_ai_1.GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 // Rate limiting configuration
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
 const MAX_REQUESTS_PER_WINDOW = 10; // Conservative limit

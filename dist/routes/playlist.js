@@ -1,0 +1,20 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const playlistController_1 = require("../controllers/playlistController");
+const auth_1 = require("../middleware/auth");
+const router = express_1.default.Router();
+router.get("/public", playlistController_1.getPublicPlaylists);
+router.use(auth_1.authenticateToken);
+router.get("/", playlistController_1.getUserPlaylists);
+router.post("/", playlistController_1.createPlaylist);
+router.get("/:playlistId", playlistController_1.getPlaylist);
+router.put("/:playlistId", playlistController_1.updatePlaylist);
+router.delete("/:playlistId", playlistController_1.deletePlaylist);
+router.post("/:playlistId/meditations", playlistController_1.addMeditationToPlaylist);
+router.delete("/:playlistId/meditations/:meditationId", playlistController_1.removeMeditationFromPlaylist);
+router.post("/:playlistId/fork", playlistController_1.forkPlaylist);
+exports.default = router;

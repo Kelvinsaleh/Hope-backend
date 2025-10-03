@@ -6,7 +6,7 @@ import { logger } from "../utils/logger";
 // Create a new journal entry
 export const createJournalEntry = async (req: Request, res: Response) => {
   try {
-    const { title, content, mood, tags, isPrivate } = req.body;
+    const { title, content, mood, tags, isPrivate, insights, emotionalState, keyThemes, concerns, achievements } = req.body;
     const userId = new Types.ObjectId(req.user.id);
 
     if (!title || !content || !mood) {
@@ -22,6 +22,11 @@ export const createJournalEntry = async (req: Request, res: Response) => {
       mood,
       tags: tags || [],
       isPrivate: isPrivate !== undefined ? isPrivate : true,
+      insights: insights || [],
+      emotionalState: emotionalState || "",
+      keyThemes: keyThemes || [],
+      concerns: concerns || [],
+      achievements: achievements || [],
     });
 
     await journalEntry.save();
@@ -113,7 +118,7 @@ export const updateJournalEntry = async (req: Request, res: Response) => {
   try {
     const { entryId } = req.params;
     const userId = new Types.ObjectId(req.user.id);
-    const { title, content, mood, tags, isPrivate } = req.body;
+    const { title, content, mood, tags, isPrivate, insights, emotionalState, keyThemes, concerns, achievements } = req.body;
 
     const entry = await JournalEntry.findOneAndUpdate(
       { _id: entryId, userId },
@@ -123,6 +128,11 @@ export const updateJournalEntry = async (req: Request, res: Response) => {
         mood,
         tags: tags || [],
         isPrivate: isPrivate !== undefined ? isPrivate : true,
+        insights: insights || [],
+        emotionalState: emotionalState || "",
+        keyThemes: keyThemes || [],
+        concerns: concerns || [],
+        achievements: achievements || [],
       },
       { new: true, runValidators: true }
     );

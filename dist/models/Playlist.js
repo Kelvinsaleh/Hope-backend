@@ -33,19 +33,17 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.JournalEntry = void 0;
+exports.Playlist = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const JournalEntrySchema = new mongoose_1.Schema({
-    userId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true },
-    title: { type: String, required: true },
-    content: { type: String, required: true },
-    mood: { type: Number, required: true, min: 1, max: 6 },
-    tags: [{ type: String }],
-    isPrivate: { type: Boolean, default: true },
-    insights: [{ type: String }],
-    emotionalState: { type: String },
-    keyThemes: [{ type: String }],
-    concerns: [{ type: String }],
-    achievements: [{ type: String }],
+const PlaylistSchema = new mongoose_1.Schema({
+    userId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    name: { type: String, required: true, trim: true, maxlength: 100 },
+    description: { type: String, trim: true, maxlength: 500 },
+    meditations: [{ type: mongoose_1.Schema.Types.ObjectId, ref: "Meditation" }],
+    isPublic: { type: Boolean, default: false },
+    plays: { type: Number, default: 0 },
+    tags: [{ type: String, trim: true }]
 }, { timestamps: true });
-exports.JournalEntry = mongoose_1.default.model("JournalEntry", JournalEntrySchema);
+PlaylistSchema.index({ userId: 1, createdAt: -1 });
+PlaylistSchema.index({ isPublic: 1, plays: -1 });
+exports.Playlist = mongoose_1.default.model("Playlist", PlaylistSchema);

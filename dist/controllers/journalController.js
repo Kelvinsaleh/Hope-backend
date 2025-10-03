@@ -7,7 +7,7 @@ const logger_1 = require("../utils/logger");
 // Create a new journal entry
 const createJournalEntry = async (req, res) => {
     try {
-        const { title, content, mood, tags, isPrivate } = req.body;
+        const { title, content, mood, tags, isPrivate, insights, emotionalState, keyThemes, concerns, achievements } = req.body;
         const userId = new mongoose_1.Types.ObjectId(req.user.id);
         if (!title || !content || !mood) {
             return res.status(400).json({
@@ -21,6 +21,11 @@ const createJournalEntry = async (req, res) => {
             mood,
             tags: tags || [],
             isPrivate: isPrivate !== undefined ? isPrivate : true,
+            insights: insights || [],
+            emotionalState: emotionalState || "",
+            keyThemes: keyThemes || [],
+            concerns: concerns || [],
+            achievements: achievements || [],
         });
         await journalEntry.save();
         res.status(201).json({
@@ -106,13 +111,18 @@ const updateJournalEntry = async (req, res) => {
     try {
         const { entryId } = req.params;
         const userId = new mongoose_1.Types.ObjectId(req.user.id);
-        const { title, content, mood, tags, isPrivate } = req.body;
+        const { title, content, mood, tags, isPrivate, insights, emotionalState, keyThemes, concerns, achievements } = req.body;
         const entry = await JournalEntry_1.JournalEntry.findOneAndUpdate({ _id: entryId, userId }, {
             title,
             content,
             mood,
             tags: tags || [],
             isPrivate: isPrivate !== undefined ? isPrivate : true,
+            insights: insights || [],
+            emotionalState: emotionalState || "",
+            keyThemes: keyThemes || [],
+            concerns: concerns || [],
+            achievements: achievements || [],
         }, { new: true, runValidators: true });
         if (!entry) {
             return res.status(404).json({
