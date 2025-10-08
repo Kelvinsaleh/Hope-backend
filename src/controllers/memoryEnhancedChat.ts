@@ -15,20 +15,32 @@ if (!GEMINI_API_KEY) {
 }
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-// Rate limiting configuration - More conservative to avoid quota issues
+// Rate limiting configuration - More reasonable limits
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
-const MAX_REQUESTS_PER_WINDOW = 3; // Very conservative limit to avoid quota issues
+const MAX_REQUESTS_PER_WINDOW = 15; // More reasonable limit
 const apiCallTracker: Map<string, { count: number; resetTime: number }> = new Map();
 
 // Global rate limiting for API calls
 const GLOBAL_RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
-const MAX_GLOBAL_REQUESTS = 5; // Global limit across all users
+const MAX_GLOBAL_REQUESTS = 20; // More reasonable global limit
 let globalRequestCount = 0;
 let globalResetTime = Date.now() + GLOBAL_RATE_LIMIT_WINDOW;
 
-// Retry configuration
-const MAX_RETRIES = 3;
-const INITIAL_RETRY_DELAY = 1000; // 1 second
+// Simple request queue to manage API calls
+interface QueuedRequest {
+  resolve: (value: string) => void;
+  reject: (error: Error) => void;
+  context: string;
+  timestamp: number;
+}
+
+const requestQueue: QueuedRequest[] = [];
+let isProcessingQueue = false;
+
+// Retry configuration - More persistent for real AI responses
+const MAX_RETRIES = 5; // More retries
+const INITIAL_RETRY_DELAY = 2000; // Start with 2 seconds
+const MAX_RETRY_DELAY = 30000; // Max 30 seconds delay
 
 interface UserMemory {
   profile: {
@@ -90,6 +102,34 @@ function checkRateLimit(userId: string): boolean {
 // Delay function for retries
 const delay = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
+// Queue processing function
+async function processQueue() {
+  if (isProcessingQueue || requestQueue.length === 0) {
+    return;
+  }
+
+  isProcessingQueue = true;
+  
+  while (requestQueue.length > 0) {
+    const request = requestQueue.shift();
+    if (!request) break;
+
+    try {
+      logger.info(`Processing queued request (${requestQueue.length} remaining)`);
+      const response = await generateAIResponseWithRetry(request.context);
+      request.resolve(response);
+      
+      // Small delay between requests to avoid overwhelming the API
+      await delay(1000);
+    } catch (error) {
+      logger.error('Error processing queued request:', error);
+      request.reject(error as Error);
+    }
+  }
+
+  isProcessingQueue = false;
+}
+
 // AI response generation with retry logic and fallback
 async function generateAIResponseWithRetry(
   aiContext: string,
@@ -112,9 +152,12 @@ async function generateAIResponseWithRetry(
         logger.warn(`Rate limit/quota exceeded: ${error.message}`);
         
         if (attempt < retries) {
-          // Use longer delays for quota issues
-          const delayTime = INITIAL_RETRY_DELAY * Math.pow(3, attempt); // More aggressive backoff
-          logger.info(`Rate limit/quota hit, retrying in ${delayTime}ms...`);
+          // Use exponential backoff with jitter for quota issues
+          const baseDelay = Math.min(INITIAL_RETRY_DELAY * Math.pow(2, attempt), MAX_RETRY_DELAY);
+          const jitter = Math.random() * 1000; // Add random jitter
+          const delayTime = baseDelay + jitter;
+          
+          logger.info(`Rate limit/quota hit, retrying in ${Math.round(delayTime)}ms... (attempt ${attempt + 1}/${retries + 1})`);
           await delay(delayTime);
           continue;
         } else {
@@ -138,6 +181,36 @@ async function generateAIResponseWithRetry(
   
   // This shouldn't be reached, but just in case
   return generateFallbackResponse(aiContext);
+}
+
+// Queued AI response function with timeout
+async function generateQueuedAIResponse(aiContext: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const queuedRequest: QueuedRequest = {
+      resolve,
+      reject,
+      context: aiContext,
+      timestamp: Date.now()
+    };
+
+    requestQueue.push(queuedRequest);
+    logger.info(`Request queued (queue length: ${requestQueue.length})`);
+    
+    // Set a timeout for the request (5 minutes)
+    const timeout = setTimeout(() => {
+      logger.warn('AI response request timed out after 5 minutes');
+      reject(new Error('AI response request timed out'));
+    }, 5 * 60 * 1000);
+    
+    // Start processing the queue
+    processQueue().catch(error => {
+      clearTimeout(timeout);
+      logger.error('Queue processing error:', error);
+      reject(error);
+    }).then(() => {
+      clearTimeout(timeout);
+    });
+  });
 }
 
 // Fallback response generator
@@ -212,9 +285,10 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
     const aiContext = createAIContext(message, memoryData, user, context);
     logger.info(`AI context created, length: ${aiContext.length}`);
 
-    // Generate AI response with retry logic and fallback
-    const aiMessage = await generateAIResponseWithRetry(aiContext);
-    logger.info(`AI response generated, length: ${aiMessage.length}`);
+    // Generate AI response using queue system for better quota management
+    logger.info(`Requesting AI response through queue system...`);
+    const aiMessage = await generateQueuedAIResponse(aiContext);
+    logger.info(`AI response generated successfully, length: ${aiMessage.length}`);
 
     // Save messages to session
     session.messages.push({

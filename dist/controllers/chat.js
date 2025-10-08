@@ -110,39 +110,57 @@ Provide a brief, supportive response that:
 
 Keep your response conversational and warm, but professional.`;
         logger_1.logger.info("Generating AI response...");
-        let response;
-        try {
-            const responseResult = await model.generateContent(responsePrompt);
-            response = responseResult.response.text().trim();
-            logger_1.logger.info("Generated response successfully, length:", response.length);
-        }
-        catch (aiError) {
-            logger_1.logger.error("AI generation failed:", aiError.message);
-            // Handle quota/rate limit errors
-            if (aiError.message?.includes('429') || aiError.message?.includes('Quota exceeded') || aiError.message?.includes('RATE_LIMIT_EXCEEDED')) {
-                logger_1.logger.warn("API quota exceeded, using fallback response");
-                response = "I'm experiencing high demand right now, but I'm here to support you. Your message is important to me. Please try again in a moment, or consider reaching out to a mental health professional for immediate support. Take care of yourself.";
-                return res.json({
-                    response,
-                    message: response,
-                    analysis: {
-                        emotionalState: "neutral",
-                        themes: [],
-                        riskLevel: 0,
-                        recommendedApproach: "supportive",
-                        progressIndicators: [],
-                    },
-                    metadata: {
-                        progress: {
-                            emotionalState: "neutral",
-                            riskLevel: 0,
-                        },
-                    },
-                    isFallback: true
-                });
+        let response = "";
+        let retryCount = 0;
+        const maxRetries = 3;
+        while (retryCount < maxRetries) {
+            try {
+                const responseResult = await model.generateContent(responsePrompt);
+                response = responseResult.response.text().trim();
+                logger_1.logger.info("Generated response successfully, length:", response.length);
+                break; // Success, exit retry loop
             }
-            // For other errors, throw to be caught by outer try-catch
-            throw aiError;
+            catch (aiError) {
+                logger_1.logger.error(`AI generation failed (attempt ${retryCount + 1}/${maxRetries}):`, aiError.message);
+                // Handle quota/rate limit errors with retry
+                if (aiError.message?.includes('429') || aiError.message?.includes('Quota exceeded') || aiError.message?.includes('RATE_LIMIT_EXCEEDED')) {
+                    retryCount++;
+                    if (retryCount < maxRetries) {
+                        const delayTime = Math.min(2000 * Math.pow(2, retryCount - 1), 10000); // Exponential backoff, max 10s
+                        logger_1.logger.info(`Quota exceeded, retrying in ${delayTime}ms...`);
+                        await new Promise(resolve => setTimeout(resolve, delayTime));
+                        continue;
+                    }
+                    else {
+                        logger_1.logger.warn("All retries exhausted, using fallback response");
+                        response = "I'm experiencing high demand right now, but I'm here to support you. Your message is important to me. Please try again in a moment, or consider reaching out to a mental health professional for immediate support. Take care of yourself.";
+                        return res.json({
+                            response,
+                            message: response,
+                            analysis: {
+                                emotionalState: "neutral",
+                                themes: [],
+                                riskLevel: 0,
+                                recommendedApproach: "supportive",
+                                progressIndicators: [],
+                            },
+                            metadata: {
+                                progress: {
+                                    emotionalState: "neutral",
+                                    riskLevel: 0,
+                                },
+                            },
+                            isFallback: true
+                        });
+                    }
+                }
+                // For other errors, throw to be caught by outer try-catch
+                throw aiError;
+            }
+        }
+        // If we get here without a response, something went wrong
+        if (!response) {
+            throw new Error("Failed to generate AI response after all retries");
         }
         // Add message to session history
         session.messages.push({
