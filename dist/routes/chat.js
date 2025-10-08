@@ -9,6 +9,8 @@ const auth_1 = require("../middleware/auth");
 const router = express_1.default.Router();
 // Apply auth middleware to all routes
 router.use(auth_1.auth);
+// Get all chat sessions for the user
+router.get("/sessions", chat_1.getAllChatSessions);
 // Create a new chat session
 router.post("/sessions", chat_1.createChatSession);
 // Get a specific chat session

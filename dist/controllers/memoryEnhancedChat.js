@@ -9,21 +9,37 @@ const Meditation_1 = require("../models/Meditation");
 const User_1 = require("../models/User");
 const logger_1 = require("../utils/logger");
 const mongoose_1 = require("mongoose");
-// Initialize Gemini API - REQUIRES environment variable
-if (!process.env.GEMINI_API_KEY) {
+// Initialize Gemini API - Use environment variable or fallback
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyDMHmeOCxXaoCuoebM4t4V0qYdXK4a7S78";
+if (!GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY environment variable is required. Please set it in your .env file.');
 }
-const genAI = new generative_ai_1.GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-// Rate limiting configuration
+const genAI = new generative_ai_1.GoogleGenerativeAI(GEMINI_API_KEY);
+// Rate limiting configuration - More conservative to avoid quota issues
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
-const MAX_REQUESTS_PER_WINDOW = 10; // Conservative limit
+const MAX_REQUESTS_PER_WINDOW = 3; // Very conservative limit to avoid quota issues
 const apiCallTracker = new Map();
+// Global rate limiting for API calls
+const GLOBAL_RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const MAX_GLOBAL_REQUESTS = 5; // Global limit across all users
+let globalRequestCount = 0;
+let globalResetTime = Date.now() + GLOBAL_RATE_LIMIT_WINDOW;
 // Retry configuration
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000; // 1 second
 // Rate limiting function
 function checkRateLimit(userId) {
     const now = Date.now();
+    // Check global rate limit first
+    if (now > globalResetTime) {
+        globalRequestCount = 0;
+        globalResetTime = now + GLOBAL_RATE_LIMIT_WINDOW;
+    }
+    if (globalRequestCount >= MAX_GLOBAL_REQUESTS) {
+        logger_1.logger.warn(`Global rate limit exceeded. Requests: ${globalRequestCount}/${MAX_GLOBAL_REQUESTS}`);
+        return false;
+    }
+    // Check user-specific rate limit
     const userTracker = apiCallTracker.get(userId);
     if (!userTracker || now > userTracker.resetTime) {
         // Reset or initialize tracker
@@ -31,12 +47,15 @@ function checkRateLimit(userId) {
             count: 1,
             resetTime: now + RATE_LIMIT_WINDOW
         });
+        globalRequestCount++;
         return true;
     }
     if (userTracker.count >= MAX_REQUESTS_PER_WINDOW) {
+        logger_1.logger.warn(`User rate limit exceeded for user ${userId}. Requests: ${userTracker.count}/${MAX_REQUESTS_PER_WINDOW}`);
         return false; // Rate limit exceeded
     }
     userTracker.count++;
+    globalRequestCount++;
     return true;
 }
 // Delay function for retries
@@ -45,29 +64,35 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 async function generateAIResponseWithRetry(aiContext, retries = MAX_RETRIES) {
     for (let attempt = 0; attempt <= retries; attempt++) {
         try {
+            logger_1.logger.info(`Attempting AI generation (attempt ${attempt + 1}/${retries + 1})`);
             const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
             const result = await model.generateContent(aiContext);
             const response = await result.response;
-            return response.text();
+            const responseText = response.text();
+            logger_1.logger.info(`AI generation successful on attempt ${attempt + 1}`);
+            return responseText;
         }
         catch (error) {
             logger_1.logger.warn(`AI generation attempt ${attempt + 1} failed:`, error.message);
-            // Check if it's a rate limit error (429)
-            if (error.message?.includes('429') || error.message?.includes('Quota exceeded')) {
+            // Check if it's a rate limit or quota error (429)
+            if (error.message?.includes('429') || error.message?.includes('Quota exceeded') || error.message?.includes('RATE_LIMIT_EXCEEDED')) {
+                logger_1.logger.warn(`Rate limit/quota exceeded: ${error.message}`);
                 if (attempt < retries) {
-                    const delayTime = INITIAL_RETRY_DELAY * Math.pow(2, attempt); // Exponential backoff
-                    logger_1.logger.info(`Rate limit hit, retrying in ${delayTime}ms...`);
+                    // Use longer delays for quota issues
+                    const delayTime = INITIAL_RETRY_DELAY * Math.pow(3, attempt); // More aggressive backoff
+                    logger_1.logger.info(`Rate limit/quota hit, retrying in ${delayTime}ms...`);
                     await delay(delayTime);
                     continue;
                 }
                 else {
                     // All retries exhausted, return fallback response
-                    logger_1.logger.error("All retries exhausted due to rate limiting, using fallback response");
+                    logger_1.logger.error("All retries exhausted due to rate limiting/quota, using fallback response");
                     return generateFallbackResponse(aiContext);
                 }
             }
             // For other errors, retry once more then fallback
             if (attempt < retries) {
+                logger_1.logger.info(`Retrying in 1000ms due to error: ${error.message}`);
                 await delay(1000);
                 continue;
             }
@@ -99,11 +124,12 @@ function generateFallbackResponse(aiContext) {
         return "It sounds like you're feeling overwhelmed right now. While I'm having some technical difficulties, here are some immediate strategies: Try breaking down what's stressing you into smaller, manageable pieces. Practice the 4-7-8 breathing technique (breathe in for 4, hold for 7, out for 8). Remember that it's okay to take breaks and ask for help when you need it.";
     }
     // Default fallback response
-    return "I'm experiencing some technical difficulties right now, but I want you to know that I'm here to support you. Your thoughts and feelings are important. While I work through these issues, please remember that you're not alone. If you're in immediate distress, consider reaching out to a mental health professional or crisis support service. Take care of yourself, and I'll be back to full functionality soon.";
+    return "I'm experiencing some technical difficulties right now due to high demand, but I want you to know that I'm here to support you. Your thoughts and feelings are important. While I work through these issues, please remember that you're not alone. Consider taking a few deep breaths, reaching out to a trusted friend, or trying a mindfulness exercise. If you're in immediate distress, please contact a mental health professional or crisis support service. I'll be back to full functionality soon.";
 }
 const sendMemoryEnhancedMessage = async (req, res) => {
     try {
         const { message, sessionId, userId, context, suggestions, userMemory } = req.body;
+        logger_1.logger.info(`Processing memory-enhanced message from user ${userId}`);
         if (!message) {
             return res.status(400).json({ error: "Message is required" });
         }
@@ -136,8 +162,10 @@ const sendMemoryEnhancedMessage = async (req, res) => {
         const memoryData = await gatherUserMemory(userId);
         // Create context for AI
         const aiContext = createAIContext(message, memoryData, user, context);
+        logger_1.logger.info(`AI context created, length: ${aiContext.length}`);
         // Generate AI response with retry logic and fallback
         const aiMessage = await generateAIResponseWithRetry(aiContext);
+        logger_1.logger.info(`AI response generated, length: ${aiMessage.length}`);
         // Save messages to session
         session.messages.push({
             role: "user",
@@ -150,6 +178,7 @@ const sendMemoryEnhancedMessage = async (req, res) => {
             timestamp: new Date(),
         });
         await session.save();
+        logger_1.logger.info(`Session saved successfully for session ${sessionId}`);
         // Generate personalized suggestions
         const personalizedSuggestions = await generatePersonalizedSuggestions(memoryData, message, aiMessage);
         res.json({
@@ -167,7 +196,7 @@ const sendMemoryEnhancedMessage = async (req, res) => {
     }
     catch (error) {
         logger_1.logger.error("Error in memory-enhanced chat:", error);
-        // Provide a helpful error response instead of generic 500
+        // Only use fallback for actual errors, not for successful API responses
         const fallbackMessage = "I'm experiencing some technical difficulties right now, but I want you to know that I'm here to support you. Your thoughts and feelings are important. Please try again in a moment, and if the issue persists, consider reaching out to a mental health professional for immediate support.";
         res.status(200).json({
             success: true,

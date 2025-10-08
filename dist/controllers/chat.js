@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getChatHistory = exports.getChatSession = exports.getSessionHistory = exports.sendMessage = exports.createChatSession = void 0;
+exports.getAllChatSessions = exports.getChatHistory = exports.getChatSession = exports.getSessionHistory = exports.sendMessage = exports.createChatSession = void 0;
 const ChatSession_1 = require("../models/ChatSession");
 const generative_ai_1 = require("@google/generative-ai");
 const uuid_1 = require("uuid");
@@ -9,7 +9,8 @@ const client_1 = require("../inngest/client");
 const User_1 = require("../models/User");
 const mongoose_1 = require("mongoose");
 // Initialize Gemini API
-const genAI = new generative_ai_1.GoogleGenerativeAI(process.env.GEMINI_API_KEY || "AIzaSyDMHmeOCxXaoCuoebM4t4V0qYdXK4a7S78");
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyDMHmeOCxXaoCuoebM4t4V0qYdXK4a7S78";
+const genAI = new generative_ai_1.GoogleGenerativeAI(GEMINI_API_KEY);
 // Create a new chat session
 const createChatSession = async (req, res) => {
     try {
@@ -94,10 +95,10 @@ const sendMessage = async (req, res) => {
         logger_1.logger.info("Sending message to Inngest:", { event });
         // Send event to Inngest for logging and analytics
         await client_1.inngest.send(event);
-        // Process the message directly using Gemini - Use gemini-1.5-pro for higher limits
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+        // Process the message directly using Gemini - Use gemini-1.5-flash for better performance
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         // Simple response without complex analysis to avoid rate limits
-        const responsePrompt = `You are a supportive AI therapist. Respond to this message with empathy and helpful guidance:
+        const responsePrompt = `You are Hope, a supportive AI therapist. Respond to this message with empathy and helpful guidance:
 
 Message: ${message}
 
@@ -105,10 +106,44 @@ Provide a brief, supportive response that:
 1. Shows understanding and empathy
 2. Offers practical advice
 3. Maintains professional boundaries
-4. Encourages further conversation`;
-        const responseResult = await model.generateContent(responsePrompt);
-        const response = responseResult.response.text().trim();
-        logger_1.logger.info("Generated response:", response);
+4. Encourages further conversation
+
+Keep your response conversational and warm, but professional.`;
+        logger_1.logger.info("Generating AI response...");
+        let response;
+        try {
+            const responseResult = await model.generateContent(responsePrompt);
+            response = responseResult.response.text().trim();
+            logger_1.logger.info("Generated response successfully, length:", response.length);
+        }
+        catch (aiError) {
+            logger_1.logger.error("AI generation failed:", aiError.message);
+            // Handle quota/rate limit errors
+            if (aiError.message?.includes('429') || aiError.message?.includes('Quota exceeded') || aiError.message?.includes('RATE_LIMIT_EXCEEDED')) {
+                logger_1.logger.warn("API quota exceeded, using fallback response");
+                response = "I'm experiencing high demand right now, but I'm here to support you. Your message is important to me. Please try again in a moment, or consider reaching out to a mental health professional for immediate support. Take care of yourself.";
+                return res.json({
+                    response,
+                    message: response,
+                    analysis: {
+                        emotionalState: "neutral",
+                        themes: [],
+                        riskLevel: 0,
+                        recommendedApproach: "supportive",
+                        progressIndicators: [],
+                    },
+                    metadata: {
+                        progress: {
+                            emotionalState: "neutral",
+                            riskLevel: 0,
+                        },
+                    },
+                    isFallback: true
+                });
+            }
+            // For other errors, throw to be caught by outer try-catch
+            throw aiError;
+        }
         // Add message to session history
         session.messages.push({
             role: "user",
@@ -226,3 +261,28 @@ const getChatHistory = async (req, res) => {
     }
 };
 exports.getChatHistory = getChatHistory;
+const getAllChatSessions = async (req, res) => {
+    try {
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
+        logger_1.logger.info(`Fetching all chat sessions for user ${userId}`);
+        // Get all chat sessions for the user, sorted by most recent
+        const sessions = await ChatSession_1.ChatSession.find({ userId })
+            .sort({ startTime: -1 })
+            .lean();
+        logger_1.logger.info(`Found ${sessions.length} chat sessions for user`);
+        // Format the sessions for the frontend
+        const formattedSessions = sessions.map(session => ({
+            sessionId: session.sessionId,
+            messages: session.messages || [],
+            createdAt: session.startTime,
+            updatedAt: session.startTime, // Use startTime as updatedAt for now
+            status: session.status || 'active'
+        }));
+        res.json(formattedSessions);
+    }
+    catch (error) {
+        logger_1.logger.error("Error fetching all chat sessions:", error);
+        res.status(500).json({ message: "Error fetching chat sessions" });
+    }
+};
+exports.getAllChatSessions = getAllChatSessions;
