@@ -22,7 +22,7 @@ const PLANS: PaymentPlan[] = [
     id: 'monthly',
     name: 'Monthly Plan',
     price: 7.99,
-    currency: 'USD',
+    currency: 'KES',
     interval: 'monthly',
     paystackPlanCode: 'PLN_monthly_premium'
   },
@@ -30,7 +30,7 @@ const PLANS: PaymentPlan[] = [
     id: 'annually',
     name: 'Annual Plan',
     price: 79.99,
-    currency: 'USD',
+    currency: 'KES',
     interval: 'annually',
     paystackPlanCode: 'PLN_annual_premium'
   }
