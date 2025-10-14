@@ -39,7 +39,7 @@ const PLANS: PaymentPlan[] = [
 // Initialize payment with Paystack
 export const initializePayment = async (req: Request, res: Response) => {
   try {
-    const { email, planId, userId, metadata } = req.body;
+    const { email, planId, metadata } = req.body;
 
     logger.info("Payment initialization request:", { email, planId, userId, metadata });
 
