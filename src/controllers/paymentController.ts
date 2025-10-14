@@ -183,6 +183,7 @@ export const verifyPayment = async (req: Request, res: Response) => {
     pendingSubscription.status = 'active';
     pendingSubscription.startDate = now;
     pendingSubscription.expiresAt = expiresAt;
+    pendingSubscription.activatedAt = now;
     pendingSubscription.paystackTransactionId = transaction.id;
     await pendingSubscription.save();
 
@@ -196,6 +197,20 @@ export const verifyPayment = async (req: Request, res: Response) => {
       { status: 'cancelled' }
     );
 
+    // Update user's subscription status in User model
+    await User.findByIdAndUpdate(userId, {
+      $set: {
+        'subscription.isActive': true,
+        'subscription.tier': 'premium',
+        'subscription.subscriptionId': pendingSubscription._id,
+        'subscription.planId': planId,
+        'subscription.activatedAt': now,
+        'subscription.expiresAt': expiresAt
+      }
+    });
+
+    logger.info(`Payment verified and user ${userId} upgraded to premium`);
+
     res.json({
       success: true,
       message: "Payment verified successfully",
@@ -203,7 +218,8 @@ export const verifyPayment = async (req: Request, res: Response) => {
         id: pendingSubscription._id,
         planId,
         status: 'active',
-        expiresAt
+        expiresAt,
+        userId: userId
       }
     });
 
