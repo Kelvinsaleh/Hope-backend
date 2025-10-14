@@ -85,5 +85,5 @@ class RateLimiter {
 
 // Create different rate limiters for different endpoints
 export const generalRateLimiter = new RateLimiter(60000, 30); // 30 requests per minute
-export const aiChatRateLimiter = new RateLimiter(60000, 10);  // 10 requests per minute for AI chat
+export const aiChatRateLimiter = new RateLimiter(60000, 25);  // 25 requests per minute for AI chat (increased)
 export const authRateLimiter = new RateLimiter(900000, 5);    // 5 requests per 15 minutes for auth 
