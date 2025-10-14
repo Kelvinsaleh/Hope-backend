@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+﻿import { Request, Response } from "express";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { ChatSession } from "../models/ChatSession";
 import { JournalEntry } from "../models/JournalEntry";
@@ -9,7 +9,7 @@ import { logger } from "../utils/logger";
 import { Types } from "mongoose";
 
 // Initialize Gemini API - Use environment variable or fallback
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyDMHmeOCxXaoCuoebM4t4V0qYdXK4a7S78";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyCCRSas8dVBP3ye4ZY5RBPsYqw7m_2jro8";
 if (!GEMINI_API_KEY) {
   throw new Error('GEMINI_API_KEY environment variable is required. Please set it in your .env file.');
 }
@@ -138,7 +138,7 @@ async function generateAIResponseWithRetry(
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       logger.info(`Attempting AI generation (attempt ${attempt + 1}/${retries + 1})`);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
       const result = await model.generateContent(aiContext);
       const response = await result.response;
       const responseText = response.text();
