@@ -39,7 +39,9 @@ const PLANS: PaymentPlan[] = [
 // Initialize payment with Paystack
 export const initializePayment = async (req: Request, res: Response) => {
   try {
-    const { email, planId, userId, metadata } = req.body;
+     const { email, planId, metadata } = req.body;
+    // Use authenticated user's ID from JWT/session
+    const userId = req.user?._id; // Ensure your auth middleware sets req.user._id
 
     logger.info("Payment initialization request:", { email, planId, userId, metadata });
 
