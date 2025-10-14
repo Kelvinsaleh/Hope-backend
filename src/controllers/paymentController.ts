@@ -41,7 +41,10 @@ export const initializePayment = async (req: Request, res: Response) => {
   try {
     const { email, planId, userId, metadata } = req.body;
 
+    logger.info("Payment initialization request:", { email, planId, userId, metadata });
+
     if (!email || !planId || !userId) {
+      logger.error("Missing required fields:", { email: !!email, planId: !!planId, userId: !!userId });
       return res.status(400).json({
         success: false,
         error: "Missing required fields: email, planId, userId"
@@ -83,7 +86,7 @@ export const initializePayment = async (req: Request, res: Response) => {
           planName: plan.name,
           ...metadata
         },
-        callback_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success`
+        callback_url: metadata?.callback_url || `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success`
       })
     });
 
