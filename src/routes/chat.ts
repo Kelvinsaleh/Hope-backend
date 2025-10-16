@@ -7,6 +7,7 @@ import {
   getAllChatSessions,
 } from "../controllers/chat";
 import { auth } from "../middleware/auth";
+import { enforceChatDailyLimit } from "../middleware/premiumLimits";
 
 const router = express.Router();
 
@@ -22,8 +23,8 @@ router.post("/sessions", createChatSession);
 // Get a specific chat session
 router.get("/sessions/:sessionId", getChatSession);
 
-// Send a message in a chat session
-router.post("/sessions/:sessionId/messages", sendMessage);
+// Send a message in a chat session (enforce free-tier daily limit)
+router.post("/sessions/:sessionId/messages", enforceChatDailyLimit, sendMessage);
 
 // Get chat history for a session
 router.get("/sessions/:sessionId/history", getChatHistory);

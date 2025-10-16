@@ -8,6 +8,7 @@ import {
   getJournalAnalytics,
 } from "../controllers/journalController";
 import { authenticateToken } from "../middleware/auth";
+import { enforceJournalWeeklyLimit } from "../middleware/premiumLimits";
 
 const router = express.Router();
 
@@ -15,7 +16,7 @@ const router = express.Router();
 router.use(authenticateToken);
 
 // Journal entry routes
-router.post("/", createJournalEntry);
+router.post("/", enforceJournalWeeklyLimit, createJournalEntry);
 router.get("/", getJournalEntries);
 router.get("/analytics", getJournalAnalytics);
 router.get("/:entryId", getJournalEntry);
