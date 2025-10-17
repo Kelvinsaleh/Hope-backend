@@ -1,4 +1,6 @@
 ﻿import express from 'express';
+import http from 'http';
+import https from 'https';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -24,7 +26,7 @@ import realtimeRoutes from './routes/realtime';
 import playlistRoutes from './routes/playlist';
 import userRoutes from './routes/user';
 import { connectDB } from './utils/db';
-import { healthCheck, readinessCheck } from './controllers/healthController';
+import { healthCheck, readinessCheck, keepAlive } from './controllers/healthController';
 
 // Load environment variables
 dotenv.config();
@@ -32,19 +34,28 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 8000;
 
+// Enable global keep-alive to reduce cold request setup costs
+(http.globalAgent as any).keepAlive = true;
+(https.globalAgent as any).keepAlive = true;
+
 // CORS configuration
+const allowedOrigins = (() => {
+  if (process.env.NODE_ENV === 'production') {
+    return [process.env.FRONTEND_URL].filter((url): url is string => Boolean(url));
+  }
+  return [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    process.env.FRONTEND_URL,
+  ].filter((url): url is string => Boolean(url));
+})();
+
 const corsOptions = {
-  origin: [
-    "http://localhost:3000",
-    "http://localhost:3001",
-    "https://ai-therapist-agent-2hx8i5cf8-kelvinsalehs-projects.vercel.app",
-    "https://ultra-predict.co.ke",
-    process.env.FRONTEND_URL
-  ].filter((url): url is string => Boolean(url)),
+  origin: allowedOrigins,
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-};
+  allowedHeaders: ["Content-Type", "Authorization", "x-api-key"],
+} as const;
 
 // Middleware
 app.use(helmet());
@@ -68,6 +79,7 @@ app.use(morgan(morganFormat, {
 // Health check routes
 app.get("/health", healthCheck);
 app.get("/ready", readinessCheck);
+app.get("/keepalive", keepAlive);
 
 // API routes
 app.use("/auth", authRoutes);

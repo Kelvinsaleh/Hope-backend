@@ -9,9 +9,9 @@ import { logger } from "../utils/logger";
 import { Types } from "mongoose";
 
 // Initialize Gemini API - Use environment variable or fallback
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyCCRSas8dVBP3ye4ZY5RBPsYqw7m_2jro8";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 if (!GEMINI_API_KEY) {
-  throw new Error('GEMINI_API_KEY environment variable is required. Please set it in your .env file.');
+  throw new Error('GEMINI_API_KEY environment variable is required. Please set it in your Render env.');
 }
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
@@ -38,9 +38,9 @@ const requestQueue: QueuedRequest[] = [];
 let isProcessingQueue = false;
 
 // Retry configuration - More persistent for real AI responses
-const MAX_RETRIES = 5; // More retries
-const INITIAL_RETRY_DELAY = 2000; // Start with 2 seconds
-const MAX_RETRY_DELAY = 30000; // Max 30 seconds delay
+const MAX_RETRIES = 2;
+const INITIAL_RETRY_DELAY = 800;
+const MAX_RETRY_DELAY = 30000;
 
 interface UserMemory {
   profile: {
@@ -139,9 +139,12 @@ async function generateAIResponseWithRetry(
     try {
       logger.info(`Attempting AI generation (attempt ${attempt + 1}/${retries + 1})`);
       const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-      const result = await model.generateContent(aiContext);
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 30000);
+      const result = await model.generateContent(aiContext as any);
       const response = await result.response;
       const responseText = response.text();
+      clearTimeout(id);
       logger.info(`AI generation successful on attempt ${attempt + 1}`);
       return responseText;
     } catch (error: any) {

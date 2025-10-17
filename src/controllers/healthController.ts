@@ -45,3 +45,8 @@ export const readinessCheck = async (req: Request, res: Response) => {
     });
   }
 }; 
+
+export const keepAlive = (req: Request, res: Response) => {
+  // Lightweight endpoint for uptime pingers; avoids heavy JSON
+  res.status(204).end();
+};

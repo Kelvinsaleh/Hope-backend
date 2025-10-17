@@ -26,6 +26,7 @@ export const errorHandler = (
     return res.status(err.statusCode).json({
       status: err.status,
       message: err.message,
+      details: process.env.NODE_ENV === 'production' ? undefined : (err as any)?.stack,
     });
   }
 
@@ -36,5 +37,6 @@ export const errorHandler = (
   return res.status(500).json({
     status: "error",
     message: "Something went wrong",
+    details: process.env.NODE_ENV === 'production' ? undefined : (err as any)?.stack,
   });
 };
