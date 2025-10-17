@@ -39,14 +39,15 @@ const PORT = process.env.PORT || 8000;
 (https.globalAgent as any).keepAlive = true;
 
 // CORS configuration
+const defaultFrontend = 'https://ai-therapist-agent-theta.vercel.app';
 const allowedOrigins = (() => {
   if (process.env.NODE_ENV === 'production') {
-    return [process.env.FRONTEND_URL].filter((url): url is string => Boolean(url));
+    return [process.env.FRONTEND_URL || defaultFrontend].filter((url): url is string => Boolean(url));
   }
   return [
     'http://localhost:3000',
     'http://localhost:3001',
-    process.env.FRONTEND_URL,
+    process.env.FRONTEND_URL || defaultFrontend,
   ].filter((url): url is string => Boolean(url));
 })();
 
