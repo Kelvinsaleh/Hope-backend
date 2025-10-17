@@ -164,9 +164,9 @@ async function generateAIResponseWithRetry(
           await delay(delayTime);
           continue;
         } else {
-          // All retries exhausted, return fallback response
-          logger.error("All retries exhausted due to rate limiting/quota, using fallback response");
-          return generateFallbackResponse(aiContext);
+          // All retries exhausted, propagate error
+          logger.error("All retries exhausted due to rate limiting/quota");
+          throw new Error('AI upstream unavailable');
         }
       }
       
@@ -176,14 +176,14 @@ async function generateAIResponseWithRetry(
         await delay(1000);
         continue;
       } else {
-        logger.error("AI generation failed after all retries, using fallback response");
-        return generateFallbackResponse(aiContext);
+        logger.error("AI generation failed after all retries");
+        throw new Error('AI upstream unavailable');
       }
     }
   }
   
-  // This shouldn't be reached, but just in case
-  return generateFallbackResponse(aiContext);
+  // This shouldn't be reached
+  throw new Error('AI upstream unavailable');
 }
 
 // Queued AI response function with timeout
@@ -331,27 +331,7 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
 
   } catch (error) {
     logger.error("Error in memory-enhanced chat:", error);
-    
-    // Only use fallback for actual errors, not for successful API responses
-    const fallbackMessage = "I'm experiencing some technical difficulties right now, but I want you to know that I'm here to support you. Your thoughts and feelings are important. Please try again in a moment, and if the issue persists, consider reaching out to a mental health professional for immediate support.";
-    
-    res.status(200).json({
-      success: true,
-      response: fallbackMessage,
-      sessionId: req.body.sessionId,
-      suggestions: [
-        "Take a few deep breaths",
-        "Try a brief mindfulness exercise",
-        "Reach out to a trusted friend or family member"
-      ],
-      memoryContext: {
-        hasJournalEntries: false,
-        hasMeditationHistory: false,
-        hasMoodData: false,
-        lastUpdated: new Date(),
-      },
-      isFailover: true
-    });
+    res.status(502).json({ error: 'AI upstream unavailable' });
   }
 };
 
