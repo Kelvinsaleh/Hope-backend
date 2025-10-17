@@ -51,11 +51,11 @@ const allowedOrigins = (() => {
 })();
 
 const corsOptions = {
-  origin: allowedOrigins,
+  origin: allowedOrigins as string[],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "x-api-key"],
-} as const;
+};
 
 // Middleware
 app.use(helmet());
