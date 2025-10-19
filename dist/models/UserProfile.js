@@ -37,27 +37,27 @@ exports.UserProfile = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const UserProfileSchema = new mongoose_1.Schema({
     userId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true, unique: true },
-    bio: { type: String, required: true, maxlength: 500 },
-    age: { type: Number, required: true, min: 18, max: 100 },
-    challenges: [{ type: String }],
-    goals: [{ type: String }],
-    communicationStyle: { type: String, enum: ["gentle", "direct", "supportive"], required: true },
-    experienceLevel: { type: String, enum: ["beginner", "intermediate", "experienced"], required: true },
-    interests: [{ type: String }],
+    bio: { type: String, maxlength: 500, default: "" },
+    age: { type: Number, min: 18, max: 100 },
+    challenges: { type: [String], default: [] },
+    goals: { type: [String], default: [] },
+    communicationStyle: { type: String, enum: ["gentle", "direct", "supportive"], default: "gentle" },
+    experienceLevel: { type: String, enum: ["beginner", "intermediate", "experienced"], default: "beginner" },
+    interests: { type: [String], default: [] },
     availability: {
-        timezone: { type: String, required: true },
-        preferredTimes: [{ type: String }],
-        daysAvailable: [{ type: String }]
+        timezone: { type: String },
+        preferredTimes: { type: [String], default: [] },
+        daysAvailable: { type: [String], default: [] }
     },
     matchingPreferences: {
         ageRange: {
             min: { type: Number, default: 18 },
             max: { type: Number, default: 100 }
         },
-        challenges: [{ type: String }],
-        goals: [{ type: String }],
-        communicationStyle: [{ type: String }],
-        experienceLevel: [{ type: String }]
+        challenges: { type: [String], default: [] },
+        goals: { type: [String], default: [] },
+        communicationStyle: { type: [String], default: [] },
+        experienceLevel: { type: [String], default: [] }
     },
     safetySettings: {
         allowEmergencySupport: { type: Boolean, default: false },
@@ -69,4 +69,5 @@ const UserProfileSchema = new mongoose_1.Schema({
     lastActive: { type: Date, default: Date.now },
     status: { type: String, enum: ["online", "away", "offline", "busy"], default: "offline" }
 }, { timestamps: true });
-exports.UserProfile = mongoose_1.default.models.UserProfile || mongoose_1.default.model("UserProfile", UserProfileSchema);
+UserProfileSchema.index({ userId: 1 }, { unique: true });
+exports.UserProfile = mongoose_1.default.models.UserProfile || (0, mongoose_1.model)("UserProfile", UserProfileSchema);

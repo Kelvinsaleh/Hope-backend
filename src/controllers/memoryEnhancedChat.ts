@@ -1,4 +1,4 @@
-﻿import { Request, Response } from "express";
+import { Request, Response } from "express";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { ChatSession } from "../models/ChatSession";
 import { JournalEntry } from "../models/JournalEntry";
@@ -8,12 +8,12 @@ import { User } from "../models/User";
 import { logger } from "../utils/logger";
 import { Types } from "mongoose";
 
-// Initialize Gemini API - Use environment variable or fallback
+// Initialize Gemini API - Use environment variable or warn
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 if (!GEMINI_API_KEY) {
-  throw new Error('GEMINI_API_KEY environment variable is required. Please set it in your Render env.');
+  logger.warn('GEMINI_API_KEY not set. AI features will use fallback responses. Set this environment variable for production.');
 }
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 // Rate limiting configuration - More reasonable limits
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
@@ -135,16 +135,24 @@ async function generateAIResponseWithRetry(
   aiContext: string,
   retries: number = MAX_RETRIES
 ): Promise<string> {
+  // Check if AI is configured
+  if (!genAI) {
+    logger.error("GEMINI_API_KEY not configured - cannot generate AI response");
+    throw new Error('AI service not configured');
+  }
+
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       logger.info(`Attempting AI generation (attempt ${attempt + 1}/${retries + 1})`);
-      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
       const controller = new AbortController();
       const id = setTimeout(() => controller.abort(), 30000);
+      
       const result = await model.generateContent(aiContext as any);
       const response = await result.response;
       const responseText = response.text();
       clearTimeout(id);
+      
       logger.info(`AI generation successful on attempt ${attempt + 1}`);
       return responseText;
     } catch (error: any) {
@@ -164,26 +172,27 @@ async function generateAIResponseWithRetry(
           await delay(delayTime);
           continue;
         } else {
-          // All retries exhausted, propagate error
-          logger.error("All retries exhausted due to rate limiting/quota");
-          throw new Error('AI upstream unavailable');
+          // All retries exhausted, return fallback
+          logger.error("All retries exhausted due to rate limiting/quota - using fallback");
+          return generateFallbackResponse(aiContext);
         }
       }
       
-      // For other errors, retry once more then fallback
+      // For other errors, retry once more then use fallback
       if (attempt < retries) {
         logger.info(`Retrying in 1000ms due to error: ${error.message}`);
         await delay(1000);
         continue;
       } else {
-        logger.error("AI generation failed after all retries");
-        throw new Error('AI upstream unavailable');
+        logger.error("AI generation failed after all retries - using fallback");
+        return generateFallbackResponse(aiContext);
       }
     }
   }
   
-  // This shouldn't be reached
-  throw new Error('AI upstream unavailable');
+  // This shouldn't be reached, but if it does, use fallback
+  logger.warn("Unexpected state in AI generation - using fallback");
+  return generateFallbackResponse(aiContext);
 }
 
 // Queued AI response function with timeout
@@ -290,8 +299,19 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
 
     // Generate AI response using queue system for better quota management
     logger.info(`Requesting AI response through queue system...`);
-    const aiMessage = await generateQueuedAIResponse(aiContext);
-    logger.info(`AI response generated successfully, length: ${aiMessage.length}`);
+    let aiMessage: string;
+    let isFailover = false;
+    
+    try {
+      aiMessage = await generateQueuedAIResponse(aiContext);
+      logger.info(`AI response generated successfully, length: ${aiMessage.length}`);
+    } catch (error: any) {
+      // If AI completely fails, use fallback
+      logger.error(`AI generation failed completely:`, error.message);
+      aiMessage = generateFallbackResponse(aiContext);
+      isFailover = true;
+      logger.info(`Using fallback response`);
+    }
 
     // Save messages to session
     session.messages.push({
@@ -321,6 +341,7 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
       response: aiMessage,
       sessionId: session.sessionId,
       suggestions: personalizedSuggestions,
+      isFailover: isFailover, // Let frontend know if this was a fallback
       memoryContext: {
         hasJournalEntries: memoryData.journalEntries.length > 0,
         hasMeditationHistory: memoryData.meditationHistory.length > 0,
@@ -331,7 +352,15 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
 
   } catch (error) {
     logger.error("Error in memory-enhanced chat:", error);
-    res.status(502).json({ error: 'AI upstream unavailable' });
+    
+    // Return a fallback response instead of just an error
+    const fallbackMessage = generateFallbackResponse("User needs support");
+    res.status(200).json({ 
+      success: true,
+      response: fallbackMessage,
+      isFailover: true,
+      error: 'AI temporarily unavailable - using fallback response'
+    });
   }
 };
 

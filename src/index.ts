@@ -1,4 +1,4 @@
-﻿import express from 'express';
+import express from 'express';
 import http from 'http';
 import https from 'https';
 import cors from 'cors';
@@ -25,6 +25,7 @@ import videoCallRoutes from './routes/videoCall';
 import realtimeRoutes from './routes/realtime';
 import playlistRoutes from './routes/playlist';
 import userRoutes from './routes/user';
+import cbtRoutes from './routes/cbt';
 import { connectDB } from './utils/db';
 import { healthCheck, readinessCheck, keepAlive } from './controllers/healthController';
 
@@ -100,6 +101,7 @@ app.use("/video-calls", videoCallRoutes);
 app.use("/realtime", realtimeRoutes);
 app.use("/playlists", playlistRoutes);
 app.use("/user", userRoutes);
+app.use("/cbt", cbtRoutes);
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -155,7 +157,12 @@ connectDB()
   })
   .catch((err) => {
     logger.error("Failed to connect to database:", err);
-    process.exit(1);
+    logger.warn("Starting server anyway for testing...");
+    app.listen(PORT, () => {
+      logger.info(`🚀 Server is running on port ${PORT} (without database)`);
+      logger.info(`📊 Health check: http://localhost:${PORT}/health`);
+      logger.info(` Environment: ${process.env.NODE_ENV || 'development'}`);
+    });
   });
 
 export default app;

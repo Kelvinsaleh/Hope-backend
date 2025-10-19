@@ -5,7 +5,7 @@ const client_1 = require("./client");
 const generative_ai_1 = require("@google/generative-ai");
 const logger_1 = require("../utils/logger");
 // Initialize Gemini
-const genAI = new generative_ai_1.GoogleGenerativeAI(process.env.GEMINI_API_KEY || "AIzaSyDMHmeOCxXaoCuoebM4t4V0qYdXK4a7S78");
+const genAI = new generative_ai_1.GoogleGenerativeAI(process.env.GEMINI_API_KEY || "AIzaSyCCRSas8dVBP3ye4ZY5RBPsYqw7m_2jro8");
 // Function to handle chat message processing
 exports.processChatMessage = client_1.inngest.createFunction({
     id: "process-chat-message",

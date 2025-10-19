@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.readinessCheck = exports.healthCheck = void 0;
+exports.keepAlive = exports.readinessCheck = exports.healthCheck = void 0;
 const logger_1 = require("../utils/logger");
 const healthCheck = async (req, res) => {
     try {
@@ -47,3 +47,8 @@ const readinessCheck = async (req, res) => {
     }
 };
 exports.readinessCheck = readinessCheck;
+const keepAlive = (req, res) => {
+    // Lightweight endpoint for uptime pingers; avoids heavy JSON
+    res.status(204).end();
+};
+exports.keepAlive = keepAlive;

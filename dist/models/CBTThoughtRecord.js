@@ -33,37 +33,52 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Subscription = void 0;
+exports.CBTThoughtRecord = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const SubscriptionSchema = new mongoose_1.Schema({
+const CBTThoughtRecordSchema = new mongoose_1.Schema({
     userId: {
         type: mongoose_1.Schema.Types.ObjectId,
         ref: "User",
         required: true,
-        index: true
+        index: true,
     },
-    planId: {
+    situation: {
         type: String,
         required: true,
-        enum: ['monthly', 'annually']
     },
-    planName: { type: String, required: true },
-    amount: { type: Number, required: true },
-    currency: { type: String, default: 'USD' },
-    status: {
+    automaticThoughts: {
         type: String,
         required: true,
-        enum: ['pending', 'active', 'cancelled', 'expired'],
-        default: 'pending',
-        index: true
     },
-    startDate: { type: Date },
-    expiresAt: { type: Date, index: true },
-    activatedAt: { type: Date },
-    paystackReference: { type: String, index: true },
-    paystackAccessCode: { type: String },
-    paystackTransactionId: { type: String }
-}, { timestamps: true });
-// Index for efficient querying
-SubscriptionSchema.index({ userId: 1, status: 1, expiresAt: 1 });
-exports.Subscription = mongoose_1.default.models.Subscription || mongoose_1.default.model("Subscription", SubscriptionSchema);
+    emotions: {
+        type: [String],
+        default: [],
+    },
+    emotionIntensity: {
+        type: Number,
+        min: 0,
+        max: 10,
+        default: 5,
+    },
+    evidenceFor: {
+        type: String,
+        default: "",
+    },
+    evidenceAgainst: {
+        type: String,
+        default: "",
+    },
+    balancedThought: {
+        type: String,
+        default: "",
+    },
+    cognitiveDistortions: {
+        type: [String],
+        default: [],
+    },
+}, {
+    timestamps: true,
+});
+// Index for faster queries
+CBTThoughtRecordSchema.index({ userId: 1, createdAt: -1 });
+exports.CBTThoughtRecord = mongoose_1.default.model("CBTThoughtRecord", CBTThoughtRecordSchema);

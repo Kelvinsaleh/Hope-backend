@@ -9,12 +9,12 @@ const Meditation_1 = require("../models/Meditation");
 const User_1 = require("../models/User");
 const logger_1 = require("../utils/logger");
 const mongoose_1 = require("mongoose");
-// Initialize Gemini API - Use environment variable or fallback
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyDMHmeOCxXaoCuoebM4t4V0qYdXK4a7S78";
+// Initialize Gemini API - Use environment variable or warn
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 if (!GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY environment variable is required. Please set it in your .env file.');
+    logger_1.logger.warn('GEMINI_API_KEY not set. AI features will use fallback responses. Set this environment variable for production.');
 }
-const genAI = new generative_ai_1.GoogleGenerativeAI(GEMINI_API_KEY);
+const genAI = GEMINI_API_KEY ? new generative_ai_1.GoogleGenerativeAI(GEMINI_API_KEY) : null;
 // Rate limiting configuration - More reasonable limits
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
 const MAX_REQUESTS_PER_WINDOW = 15; // More reasonable limit
@@ -27,9 +27,9 @@ let globalResetTime = Date.now() + GLOBAL_RATE_LIMIT_WINDOW;
 const requestQueue = [];
 let isProcessingQueue = false;
 // Retry configuration - More persistent for real AI responses
-const MAX_RETRIES = 5; // More retries
-const INITIAL_RETRY_DELAY = 2000; // Start with 2 seconds
-const MAX_RETRY_DELAY = 30000; // Max 30 seconds delay
+const MAX_RETRIES = 2;
+const INITIAL_RETRY_DELAY = 800;
+const MAX_RETRY_DELAY = 30000;
 // Rate limiting function
 function checkRateLimit(userId) {
     const now = Date.now();
@@ -89,13 +89,21 @@ async function processQueue() {
 }
 // AI response generation with retry logic and fallback
 async function generateAIResponseWithRetry(aiContext, retries = MAX_RETRIES) {
+    // Check if AI is configured
+    if (!genAI) {
+        logger_1.logger.error("GEMINI_API_KEY not configured - cannot generate AI response");
+        throw new Error('AI service not configured');
+    }
     for (let attempt = 0; attempt <= retries; attempt++) {
         try {
             logger_1.logger.info(`Attempting AI generation (attempt ${attempt + 1}/${retries + 1})`);
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), 30000);
             const result = await model.generateContent(aiContext);
             const response = await result.response;
             const responseText = response.text();
+            clearTimeout(id);
             logger_1.logger.info(`AI generation successful on attempt ${attempt + 1}`);
             return responseText;
         }
@@ -114,24 +122,25 @@ async function generateAIResponseWithRetry(aiContext, retries = MAX_RETRIES) {
                     continue;
                 }
                 else {
-                    // All retries exhausted, return fallback response
-                    logger_1.logger.error("All retries exhausted due to rate limiting/quota, using fallback response");
+                    // All retries exhausted, return fallback
+                    logger_1.logger.error("All retries exhausted due to rate limiting/quota - using fallback");
                     return generateFallbackResponse(aiContext);
                 }
             }
-            // For other errors, retry once more then fallback
+            // For other errors, retry once more then use fallback
             if (attempt < retries) {
                 logger_1.logger.info(`Retrying in 1000ms due to error: ${error.message}`);
                 await delay(1000);
                 continue;
             }
             else {
-                logger_1.logger.error("AI generation failed after all retries, using fallback response");
+                logger_1.logger.error("AI generation failed after all retries - using fallback");
                 return generateFallbackResponse(aiContext);
             }
         }
     }
-    // This shouldn't be reached, but just in case
+    // This shouldn't be reached, but if it does, use fallback
+    logger_1.logger.warn("Unexpected state in AI generation - using fallback");
     return generateFallbackResponse(aiContext);
 }
 // Queued AI response function with timeout
@@ -220,8 +229,19 @@ const sendMemoryEnhancedMessage = async (req, res) => {
         logger_1.logger.info(`AI context created, length: ${aiContext.length}`);
         // Generate AI response using queue system for better quota management
         logger_1.logger.info(`Requesting AI response through queue system...`);
-        const aiMessage = await generateQueuedAIResponse(aiContext);
-        logger_1.logger.info(`AI response generated successfully, length: ${aiMessage.length}`);
+        let aiMessage;
+        let isFailover = false;
+        try {
+            aiMessage = await generateQueuedAIResponse(aiContext);
+            logger_1.logger.info(`AI response generated successfully, length: ${aiMessage.length}`);
+        }
+        catch (error) {
+            // If AI completely fails, use fallback
+            logger_1.logger.error(`AI generation failed completely:`, error.message);
+            aiMessage = generateFallbackResponse(aiContext);
+            isFailover = true;
+            logger_1.logger.info(`Using fallback response`);
+        }
         // Save messages to session
         session.messages.push({
             role: "user",
@@ -242,6 +262,7 @@ const sendMemoryEnhancedMessage = async (req, res) => {
             response: aiMessage,
             sessionId: session.sessionId,
             suggestions: personalizedSuggestions,
+            isFailover: isFailover, // Let frontend know if this was a fallback
             memoryContext: {
                 hasJournalEntries: memoryData.journalEntries.length > 0,
                 hasMeditationHistory: memoryData.meditationHistory.length > 0,
@@ -252,24 +273,13 @@ const sendMemoryEnhancedMessage = async (req, res) => {
     }
     catch (error) {
         logger_1.logger.error("Error in memory-enhanced chat:", error);
-        // Only use fallback for actual errors, not for successful API responses
-        const fallbackMessage = "I'm experiencing some technical difficulties right now, but I want you to know that I'm here to support you. Your thoughts and feelings are important. Please try again in a moment, and if the issue persists, consider reaching out to a mental health professional for immediate support.";
+        // Return a fallback response instead of just an error
+        const fallbackMessage = generateFallbackResponse("User needs support");
         res.status(200).json({
             success: true,
             response: fallbackMessage,
-            sessionId: req.body.sessionId,
-            suggestions: [
-                "Take a few deep breaths",
-                "Try a brief mindfulness exercise",
-                "Reach out to a trusted friend or family member"
-            ],
-            memoryContext: {
-                hasJournalEntries: false,
-                hasMeditationHistory: false,
-                hasMoodData: false,
-                lastUpdated: new Date(),
-            },
-            isFailover: true
+            isFailover: true,
+            error: 'AI temporarily unavailable - using fallback response'
         });
     }
 };

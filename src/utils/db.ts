@@ -6,10 +6,14 @@ const MONGODB_URI =
 
 export const connectDB = async () => {
   try {
-    await mongoose.connect(MONGODB_URI);
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
+      socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
+    });
     console.info("Connected to MongoDB Atlas");
   } catch (error) {
     console.error("MongoDB connection error:", error);
-    process.exit(1);
+    console.warn("Continuing without database connection for testing...");
+    // Don't exit process for now, allow server to start
   }
 };

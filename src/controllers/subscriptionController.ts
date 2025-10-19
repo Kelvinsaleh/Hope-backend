@@ -1,4 +1,4 @@
-﻿import { Request, Response } from "express";
+import { Request, Response } from "express";
 import { Subscription } from "../models/Subscription";
 import { User } from "../models/User";
 import { Types } from "mongoose";

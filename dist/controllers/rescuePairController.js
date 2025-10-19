@@ -11,18 +11,24 @@ const calculateCompatibility = (profile1, profile2) => {
     let score = 0;
     let factors = 0;
     // Age compatibility (20% weight)
-    const ageDiff = Math.abs(profile1.age - profile2.age);
+    const age1 = typeof profile1.age === 'number' ? profile1.age : 0;
+    const age2 = typeof profile2.age === 'number' ? profile2.age : 0;
+    const ageDiff = Math.abs(age1 - age2);
     const ageScore = Math.max(0, 100 - (ageDiff * 2));
     score += ageScore * 0.2;
     factors += 0.2;
     // Shared challenges (30% weight)
-    const sharedChallenges = profile1.challenges.filter((c) => profile2.challenges.includes(c));
-    const challengeScore = (sharedChallenges.length / Math.max(profile1.challenges.length, profile2.challenges.length)) * 100;
+    const challenges1 = Array.isArray(profile1.challenges) ? profile1.challenges : [];
+    const challenges2 = Array.isArray(profile2.challenges) ? profile2.challenges : [];
+    const sharedChallenges = challenges1.filter((c) => challenges2.includes(c));
+    const challengeScore = (sharedChallenges.length / Math.max(challenges1.length || 1, challenges2.length || 1)) * 100;
     score += challengeScore * 0.3;
     factors += 0.3;
     // Shared goals (25% weight)
-    const sharedGoals = profile1.goals.filter((g) => profile2.goals.includes(g));
-    const goalScore = (sharedGoals.length / Math.max(profile1.goals.length, profile2.goals.length)) * 100;
+    const goals1 = Array.isArray(profile1.goals) ? profile1.goals : [];
+    const goals2 = Array.isArray(profile2.goals) ? profile2.goals : [];
+    const sharedGoals = goals1.filter((g) => goals2.includes(g));
+    const goalScore = (sharedGoals.length / Math.max(goals1.length || 1, goals2.length || 1)) * 100;
     score += goalScore * 0.25;
     factors += 0.25;
     // Communication style compatibility (15% weight)
@@ -31,8 +37,8 @@ const calculateCompatibility = (profile1, profile2) => {
     factors += 0.15;
     // Experience level compatibility (10% weight)
     const experienceLevels = ["beginner", "intermediate", "experienced"];
-    const level1Index = experienceLevels.indexOf(profile1.experienceLevel);
-    const level2Index = experienceLevels.indexOf(profile2.experienceLevel);
+    const level1Index = experienceLevels.indexOf(profile1.experienceLevel || "beginner");
+    const level2Index = experienceLevels.indexOf(profile2.experienceLevel || "beginner");
     const levelDiff = Math.abs(level1Index - level2Index);
     const experienceScore = Math.max(0, 100 - (levelDiff * 50));
     score += experienceScore * 0.1;
@@ -76,14 +82,15 @@ const findMatches = async (req, res) => {
             .limit(20);
         // Calculate compatibility scores and sort
         const matchesWithScores = potentialMatches.map(match => {
-            const compatibility = calculateCompatibility(userProfile, match);
+            const matchProfile = match;
+            const compatibility = calculateCompatibility(userProfile, matchProfile);
             return {
                 ...match.toObject(),
                 compatibilityScore: compatibility,
-                sharedChallenges: userProfile.challenges.filter((c) => match.challenges.includes(c)),
-                complementaryGoals: userProfile.goals.filter((g) => match.goals.includes(g)),
-                isVerified: match.isVerified,
-                allowEmergencySupport: match.safetySettings?.allowEmergencySupport || false
+                sharedChallenges: (userProfile.challenges || []).filter((c) => (matchProfile.challenges || []).includes(c)),
+                complementaryGoals: (userProfile.goals || []).filter((g) => (matchProfile.goals || []).includes(g)),
+                isVerified: matchProfile.isVerified || false,
+                allowEmergencySupport: matchProfile.safetySettings?.allowEmergencySupport || false
             };
         })
             .filter(match => match.compatibilityScore >= 60)
@@ -134,7 +141,7 @@ const createRescuePair = async (req, res) => {
         // Create new rescue pair
         const rescuePair = new RescuePair_1.RescuePair({
             user1Id: userId,
-            user2Id: targetUserId,
+            user2Id: new mongoose_1.Types.ObjectId(targetUserId),
             status: "pending",
             createdAt: new Date()
         });

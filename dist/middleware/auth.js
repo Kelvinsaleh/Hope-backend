@@ -15,7 +15,7 @@ const auth = async (req, res, next) => {
                 message: "Authentication required"
             });
         }
-        const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET || "your-secret-key");
+        const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET || "254Universale");
         const user = await User_1.User.findById(decoded.userId);
         if (!user) {
             return res.status(401).json({

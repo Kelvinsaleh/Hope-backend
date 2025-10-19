@@ -13,7 +13,7 @@ const PLANS = [
         id: 'monthly',
         name: 'Monthly Plan',
         price: 7.99,
-        currency: 'USD',
+        currency: 'KES',
         interval: 'monthly',
         paystackPlanCode: 'PLN_monthly_premium'
     },
@@ -21,7 +21,7 @@ const PLANS = [
         id: 'annually',
         name: 'Annual Plan',
         price: 79.99,
-        currency: 'USD',
+        currency: 'KES',
         interval: 'annually',
         paystackPlanCode: 'PLN_annual_premium'
     }
@@ -29,8 +29,12 @@ const PLANS = [
 // Initialize payment with Paystack
 const initializePayment = async (req, res) => {
     try {
-        const { email, planId, userId, metadata } = req.body;
+        const { email, planId, metadata } = req.body;
+        // Use authenticated user's ID from JWT/session
+        const userId = req.user?._id; // Ensure your auth middleware sets req.user._id
+        logger_1.logger.info("Payment initialization request:", { email, planId, userId, metadata });
         if (!email || !planId || !userId) {
+            logger_1.logger.error("Missing required fields:", { email: !!email, planId: !!planId, userId: !!userId });
             return res.status(400).json({
                 success: false,
                 error: "Missing required fields: email, planId, userId"
@@ -69,7 +73,7 @@ const initializePayment = async (req, res) => {
                     planName: plan.name,
                     ...metadata
                 },
-                callback_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success`
+                callback_url: metadata?.callback_url || `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success`
             })
         });
         const paystackData = await paystackResponse.json();
@@ -155,6 +159,7 @@ const verifyPayment = async (req, res) => {
         pendingSubscription.status = 'active';
         pendingSubscription.startDate = now;
         pendingSubscription.expiresAt = expiresAt;
+        pendingSubscription.activatedAt = now;
         pendingSubscription.paystackTransactionId = transaction.id;
         await pendingSubscription.save();
         // Deactivate any existing active subscriptions
@@ -163,6 +168,18 @@ const verifyPayment = async (req, res) => {
             status: 'active',
             _id: { $ne: pendingSubscription._id }
         }, { status: 'cancelled' });
+        // Update user's subscription status in User model
+        await User_1.User.findByIdAndUpdate(userId, {
+            $set: {
+                'subscription.isActive': true,
+                'subscription.tier': 'premium',
+                'subscription.subscriptionId': pendingSubscription._id,
+                'subscription.planId': planId,
+                'subscription.activatedAt': now,
+                'subscription.expiresAt': expiresAt
+            }
+        });
+        logger_1.logger.info(`Payment verified and user ${userId} upgraded to premium`);
         res.json({
             success: true,
             message: "Payment verified successfully",
@@ -170,7 +187,8 @@ const verifyPayment = async (req, res) => {
                 id: pendingSubscription._id,
                 planId,
                 status: 'active',
-                expiresAt
+                expiresAt,
+                userId: userId
             }
         });
     }

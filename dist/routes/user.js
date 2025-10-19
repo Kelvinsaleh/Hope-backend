@@ -7,6 +7,8 @@ const express_1 = __importDefault(require("express"));
 const auth_1 = require("../middleware/auth");
 const Subscription_1 = require("../models/Subscription");
 const mongoose_1 = require("mongoose");
+const UserProfile_1 = require("../models/UserProfile");
+const User_1 = require("../models/User");
 const router = express_1.default.Router();
 router.use(auth_1.authenticateToken);
 router.get("/tier", async (req, res) => {
@@ -32,3 +34,65 @@ router.get("/tier", async (req, res) => {
     }
 });
 exports.default = router;
+// Profile routes
+router.get("/profile", async (req, res) => {
+    try {
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
+        const existing = await UserProfile_1.UserProfile.findOne({ userId });
+        if (!existing) {
+            await UserProfile_1.UserProfile.create({ userId });
+        }
+        const profile = await UserProfile_1.UserProfile.findOne({ userId }).lean();
+        res.json({ success: true, data: profile || null });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, error: "Failed to get profile" });
+    }
+});
+router.post("/profile", async (req, res) => {
+    try {
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
+        const existing = await UserProfile_1.UserProfile.findOne({ userId });
+        if (existing) {
+            await UserProfile_1.UserProfile.updateOne({ userId }, { $set: req.body });
+            const updated = await UserProfile_1.UserProfile.findOne({ userId }).lean();
+            return res.json({ success: true, data: updated });
+        }
+        const created = await UserProfile_1.UserProfile.create({ userId, ...req.body });
+        res.json({ success: true, data: created });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, error: "Failed to create profile" });
+    }
+});
+router.put("/profile", async (req, res) => {
+    try {
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
+        await UserProfile_1.UserProfile.updateOne({ userId }, { $set: req.body }, { upsert: true });
+        const updated = await UserProfile_1.UserProfile.findOne({ userId }).lean();
+        res.json({ success: true, data: updated });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, error: "Failed to update profile" });
+    }
+});
+// Basic user update (name/email)
+router.put("/", async (req, res) => {
+    try {
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
+        const { name, email } = req.body || {};
+        const update = {};
+        if (typeof name === 'string' && name.trim())
+            update.name = name.trim();
+        if (typeof email === 'string' && email.trim())
+            update.email = email.trim();
+        if (Object.keys(update).length === 0) {
+            return res.status(400).json({ success: false, error: "No changes provided" });
+        }
+        const user = await User_1.User.findByIdAndUpdate(userId, { $set: update }, { new: true }).lean();
+        res.json({ success: true, data: user });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, error: "Failed to update user" });
+    }
+});

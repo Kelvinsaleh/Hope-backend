@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const meditationController_1 = require("../controllers/meditationController");
 const auth_1 = require("../middleware/auth");
+const premiumLimits_1 = require("../middleware/premiumLimits");
 const adminAuth_1 = require("../middleware/adminAuth");
 const multer_1 = __importDefault(require("multer"));
 const router = express_1.default.Router();
@@ -30,6 +31,6 @@ router.put("/:meditationId", adminAuth_1.requireAdmin, meditationController_1.up
 router.delete("/:meditationId", adminAuth_1.requireAdmin, meditationController_1.deleteMeditation);
 // Parameterized routes LAST
 router.get("/:meditationId", meditationController_1.getMeditation);
-router.post("/sessions", meditationController_1.startMeditationSession);
+router.post("/sessions", premiumLimits_1.enforceMeditationWeeklyLimit, meditationController_1.startMeditationSession);
 router.put("/sessions/:sessionId", meditationController_1.completeMeditationSession);
 exports.default = router;

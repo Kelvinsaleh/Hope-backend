@@ -4,6 +4,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
+const http_1 = __importDefault(require("http"));
+const https_1 = __importDefault(require("https"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
 const morgan_1 = __importDefault(require("morgan"));
@@ -26,24 +28,34 @@ const crisis_1 = __importDefault(require("./routes/crisis"));
 const videoCall_1 = __importDefault(require("./routes/videoCall"));
 const realtime_1 = __importDefault(require("./routes/realtime"));
 const playlist_1 = __importDefault(require("./routes/playlist"));
+const user_1 = __importDefault(require("./routes/user"));
+const cbt_1 = __importDefault(require("./routes/cbt"));
 const db_1 = require("./utils/db");
 const healthController_1 = require("./controllers/healthController");
 // Load environment variables
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 8000;
+// Enable global keep-alive to reduce cold request setup costs
+http_1.default.globalAgent.keepAlive = true;
+https_1.default.globalAgent.keepAlive = true;
 // CORS configuration
+const defaultFrontend = 'https://ai-therapist-agent-theta.vercel.app';
+const allowedOrigins = (() => {
+    if (process.env.NODE_ENV === 'production') {
+        return [process.env.FRONTEND_URL || defaultFrontend].filter((url) => Boolean(url));
+    }
+    return [
+        'http://localhost:3000',
+        'http://localhost:3001',
+        process.env.FRONTEND_URL || defaultFrontend,
+    ].filter((url) => Boolean(url));
+})();
 const corsOptions = {
-    origin: [
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "https://ai-therapist-agent-2hx8i5cf8-kelvinsalehs-projects.vercel.app",
-        "https://ultra-predict.co.ke",
-        process.env.FRONTEND_URL
-    ].filter((url) => Boolean(url)),
+    origin: allowedOrigins,
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-api-key"],
 };
 // Middleware
 app.use((0, helmet_1.default)());
@@ -64,6 +76,7 @@ app.use((0, morgan_1.default)(morganFormat, {
 // Health check routes
 app.get("/health", healthController_1.healthCheck);
 app.get("/ready", healthController_1.readinessCheck);
+app.get("/keepalive", healthController_1.keepAlive);
 // API routes
 app.use("/auth", auth_1.default);
 app.use("/chat", chat_1.default);
@@ -81,6 +94,8 @@ app.use("/crisis", crisis_1.default);
 app.use("/video-calls", videoCall_1.default);
 app.use("/realtime", realtime_1.default);
 app.use("/playlists", playlist_1.default);
+app.use("/user", user_1.default);
+app.use("/cbt", cbt_1.default);
 // Error handling middleware
 app.use((err, req, res, next) => {
     logger_1.logger.error('Unhandled error:', {
@@ -129,6 +144,11 @@ process.on('SIGINT', () => {
 })
     .catch((err) => {
     logger_1.logger.error("Failed to connect to database:", err);
-    process.exit(1);
+    logger_1.logger.warn("Starting server anyway for testing...");
+    app.listen(PORT, () => {
+        logger_1.logger.info(`🚀 Server is running on port ${PORT} (without database)`);
+        logger_1.logger.info(`📊 Health check: http://localhost:${PORT}/health`);
+        logger_1.logger.info(` Environment: ${process.env.NODE_ENV || 'development'}`);
+    });
 });
 exports.default = app;
