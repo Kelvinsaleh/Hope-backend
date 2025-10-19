@@ -97,7 +97,7 @@ async function generateAIResponseWithRetry(aiContext, retries = MAX_RETRIES) {
     for (let attempt = 0; attempt <= retries; attempt++) {
         try {
             logger_1.logger.info(`Attempting AI generation (attempt ${attempt + 1}/${retries + 1})`);
-            const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
             const controller = new AbortController();
             const id = setTimeout(() => controller.abort(), 30000);
             const result = await model.generateContent(aiContext);
