@@ -43,25 +43,75 @@ const PORT = process.env.PORT || 8000;
 const defaultFrontend = 'https://ai-therapist-agent-theta.vercel.app';
 const allowedOrigins = (() => {
   if (process.env.NODE_ENV === 'production') {
-    return [process.env.FRONTEND_URL || defaultFrontend].filter((url): url is string => Boolean(url));
+    return [
+      process.env.FRONTEND_URL || defaultFrontend,
+      'https://ai-therapist-agent-theta.vercel.app',
+      'https://ai-therapist-agent-2hx8i5cf8-kelvinsalehs-projects.vercel.app',
+      'https://ultra-predict.co.ke',
+      'http://ultra-predict.co.ke'
+    ].filter((url): url is string => Boolean(url));
   }
   return [
     'http://localhost:3000',
     'http://localhost:3001',
+    'http://localhost:3002',
     process.env.FRONTEND_URL || defaultFrontend,
+    'https://ai-therapist-agent-theta.vercel.app',
+    'https://ai-therapist-agent-2hx8i5cf8-kelvinsalehs-projects.vercel.app',
+    'https://ultra-predict.co.ke',
+    'http://ultra-predict.co.ke'
   ].filter((url): url is string => Boolean(url));
 })();
 
 const corsOptions = {
-  origin: allowedOrigins as string[],
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    // Log the blocked origin for debugging
+    console.log(`CORS blocked origin: ${origin}`);
+    console.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
+    
+    return callback(new Error('Not allowed by CORS'), false);
+  },
   credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "x-api-key"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+  allowedHeaders: [
+    "Content-Type", 
+    "Authorization", 
+    "x-api-key",
+    "X-Requested-With",
+    "Accept",
+    "Origin"
+  ],
+  exposedHeaders: ["Content-Length", "X-Foo", "X-Bar"],
+  maxAge: 86400 // 24 hours
 };
 
 // Middleware
 app.use(helmet());
+
+// CORS debugging middleware
+app.use((req, res, next) => {
+  console.log(`CORS Request - Origin: ${req.headers.origin}, Method: ${req.method}, Path: ${req.path}`);
+  next();
+});
+
 app.use(cors(corsOptions));
+
+// Additional CORS headers for debugging
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-Requested-With, Accept, Origin');
+  next();
+});
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
