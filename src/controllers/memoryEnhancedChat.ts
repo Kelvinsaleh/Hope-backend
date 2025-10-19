@@ -144,7 +144,7 @@ async function generateAIResponseWithRetry(
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       logger.info(`Attempting AI generation (attempt ${attempt + 1}/${retries + 1})`);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
       const controller = new AbortController();
       const id = setTimeout(() => controller.abort(), 30000);
       
