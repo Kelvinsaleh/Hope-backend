@@ -5,6 +5,7 @@ import {
   sendMessage,
   getChatHistory,
   getAllChatSessions,
+  completeChatSession,
 } from "../controllers/chat";
 import { auth } from "../middleware/auth";
 import { enforceChatDailyLimit } from "../middleware/premiumLimits";
@@ -28,6 +29,9 @@ router.post("/sessions/:sessionId/messages", enforceChatDailyLimit, sendMessage)
 
 // Get chat history for a session
 router.get("/sessions/:sessionId/history", getChatHistory);
+
+// Complete a chat session
+router.post("/sessions/:sessionId/complete", completeChatSession);
 
 export default router;
 
