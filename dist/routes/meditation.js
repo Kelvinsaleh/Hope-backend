@@ -24,6 +24,7 @@ router.use(auth_1.authenticateToken);
 router.get("/sessions", meditationController_1.getMeditationSessions); // This must come before /:meditationId
 router.get("/history", meditationController_1.getMeditationHistory);
 router.get("/analytics", meditationController_1.getMeditationAnalytics);
+router.get("/favorites", meditationController_1.getFavoriteMeditations);
 // Admin-only routes
 router.post("/", adminAuth_1.requireAdmin, meditationController_1.createMeditation);
 router.post("/upload", adminAuth_1.requireAdmin, upload.single('file'), meditationController_1.uploadMeditation);
@@ -31,6 +32,9 @@ router.put("/:meditationId", adminAuth_1.requireAdmin, meditationController_1.up
 router.delete("/:meditationId", adminAuth_1.requireAdmin, meditationController_1.deleteMeditation);
 // Parameterized routes LAST
 router.get("/:meditationId", meditationController_1.getMeditation);
+router.get("/:meditationId/favorite-status", meditationController_1.checkFavoriteStatus);
 router.post("/sessions", premiumLimits_1.enforceMeditationWeeklyLimit, meditationController_1.startMeditationSession);
 router.put("/sessions/:sessionId", meditationController_1.completeMeditationSession);
+router.post("/:meditationId/favorite", meditationController_1.addToFavorites);
+router.delete("/:meditationId/favorite", meditationController_1.removeFromFavorites);
 exports.default = router;

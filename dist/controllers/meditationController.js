@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteMeditation = exports.updateMeditation = exports.getMeditationAnalytics = exports.getMeditationHistory = exports.completeMeditationSession = exports.startMeditationSession = exports.uploadMeditation = exports.createMeditation = exports.getMeditation = exports.getMeditationSessions = exports.getMeditations = void 0;
+exports.checkFavoriteStatus = exports.getFavoriteMeditations = exports.removeFromFavorites = exports.addToFavorites = exports.deleteMeditation = exports.updateMeditation = exports.getMeditationAnalytics = exports.getMeditationHistory = exports.completeMeditationSession = exports.startMeditationSession = exports.uploadMeditation = exports.createMeditation = exports.getMeditation = exports.getMeditationSessions = exports.getMeditations = void 0;
 const Meditation_1 = require("../models/Meditation");
 const mongoose_1 = require("mongoose");
 const logger_1 = require("../utils/logger");
@@ -497,4 +497,155 @@ const deleteMeditation = async (req, res) => {
         });
     }
 };
+
+// Add meditation to favorites
+const addToFavorites = async (req, res) => {
+    try {
+        const { meditationId } = req.params;
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
+        if (!mongoose_1.Types.ObjectId.isValid(meditationId)) {
+            return res.status(400).json({
+                success: false,
+                error: "Invalid meditation ID"
+            });
+        }
+        // Check if already favorited
+        const existingFavorite = await Meditation_1.FavoriteMeditation.findOne({
+            userId,
+            meditationId: new mongoose_1.Types.ObjectId(meditationId)
+        });
+        if (existingFavorite) {
+            return res.status(400).json({
+                success: false,
+                error: "Meditation already in favorites"
+            });
+        }
+        // Add to favorites
+        const favorite = new Meditation_1.FavoriteMeditation({
+            userId,
+            meditationId: new mongoose_1.Types.ObjectId(meditationId)
+        });
+        await favorite.save();
+        res.json({
+            success: true,
+            message: "Meditation added to favorites",
+            favorite
+        });
+    }
+    catch (error) {
+        logger_1.logger.error("Error adding to favorites:", error);
+        res.status(500).json({
+            success: false,
+            error: "Failed to add to favorites",
+            details: error instanceof Error ? error.message : "Unknown error"
+        });
+    }
+};
+
+// Remove meditation from favorites
+const removeFromFavorites = async (req, res) => {
+    try {
+        const { meditationId } = req.params;
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
+        if (!mongoose_1.Types.ObjectId.isValid(meditationId)) {
+            return res.status(400).json({
+                success: false,
+                error: "Invalid meditation ID"
+            });
+        }
+        const result = await Meditation_1.FavoriteMeditation.findOneAndDelete({
+            userId,
+            meditationId: new mongoose_1.Types.ObjectId(meditationId)
+        });
+        if (!result) {
+            return res.status(404).json({
+                success: false,
+                error: "Meditation not found in favorites"
+            });
+        }
+        res.json({
+            success: true,
+            message: "Meditation removed from favorites"
+        });
+    }
+    catch (error) {
+        logger_1.logger.error("Error removing from favorites:", error);
+        res.status(500).json({
+            success: false,
+            error: "Failed to remove from favorites",
+            details: error instanceof Error ? error.message : "Unknown error"
+        });
+    }
+};
+
+// Get user's favorite meditations
+const getFavoriteMeditations = async (req, res) => {
+    try {
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
+        const { page = 1, limit = 20 } = req.query;
+        const skip = (Number(page) - 1) * Number(limit);
+        const favorites = await Meditation_1.FavoriteMeditation.find({ userId })
+            .populate('meditationId')
+            .sort({ favoritedAt: -1 })
+            .skip(skip)
+            .limit(Number(limit))
+            .lean();
+        const total = await Meditation_1.FavoriteMeditation.countDocuments({ userId });
+        res.json({
+            success: true,
+            favorites,
+            pagination: {
+                currentPage: Number(page),
+                totalPages: Math.ceil(total / Number(limit)),
+                totalFavorites: total,
+                hasNextPage: skip + Number(limit) < total,
+                hasPrevPage: Number(page) > 1
+            }
+        });
+    }
+    catch (error) {
+        logger_1.logger.error("Error getting favorite meditations:", error);
+        res.status(500).json({
+            success: false,
+            error: "Failed to get favorite meditations",
+            details: error instanceof Error ? error.message : "Unknown error"
+        });
+    }
+};
+
+// Check if meditation is favorited by user
+const checkFavoriteStatus = async (req, res) => {
+    try {
+        const { meditationId } = req.params;
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
+        if (!mongoose_1.Types.ObjectId.isValid(meditationId)) {
+            return res.status(400).json({
+                success: false,
+                error: "Invalid meditation ID"
+            });
+        }
+        const favorite = await Meditation_1.FavoriteMeditation.findOne({
+            userId,
+            meditationId: new mongoose_1.Types.ObjectId(meditationId)
+        });
+        res.json({
+            success: true,
+            isFavorited: !!favorite,
+            favorite
+        });
+    }
+    catch (error) {
+        logger_1.logger.error("Error checking favorite status:", error);
+        res.status(500).json({
+            success: false,
+            error: "Failed to check favorite status",
+            details: error instanceof Error ? error.message : "Unknown error"
+        });
+    }
+};
+
 exports.deleteMeditation = deleteMeditation;
+exports.addToFavorites = addToFavorites;
+exports.removeFromFavorites = removeFromFavorites;
+exports.getFavoriteMeditations = getFavoriteMeditations;
+exports.checkFavoriteStatus = checkFavoriteStatus;
