@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { ChatSession } from "../models/ChatSession";
+import { ChatSession, IChatMessage } from "../models/ChatSession";
 import { Types } from "mongoose";
 import { logger } from "../utils/logger";
 
@@ -98,8 +98,8 @@ export const sendMessage = async (req: Request, res: Response) => {
     }
 
     // Add user message to session
-    const userMessage = {
-      role: "user",
+    const userMessage: IChatMessage = {
+      role: "user" as const,
       content: message,
       timestamp: new Date(),
       metadata: {}
@@ -144,11 +144,11 @@ export const sendMessage = async (req: Request, res: Response) => {
           const recentMoods = await Mood.find({ userId })
             .sort({ timestamp: -1 })
             .limit(7)
-            .select('mood intensity timestamp');
+            .select('score timestamp');
           
           if (recentMoods.length > 0) {
-            const avgMood = recentMoods.reduce((sum, m) => sum + (m.intensity || 3), 0) / recentMoods.length;
-            userContext += `\n**Recent Mood Pattern:** Average mood ${avgMood.toFixed(1)}/5 over past week\n`;
+            const avgMood = recentMoods.reduce((sum, m) => sum + (m.score || 50), 0) / recentMoods.length;
+            userContext += `\n**Recent Mood Pattern:** Average mood ${avgMood.toFixed(1)}/100 over past week\n`;
           }
 
           // Get summary of previous sessions
@@ -220,8 +220,8 @@ Keep your response conversational (2-4 paragraphs), empathetic, and focused on t
     }
 
     // Add AI response to session
-    const assistantMessage = {
-      role: "assistant",
+    const assistantMessage: IChatMessage = {
+      role: "assistant" as const,
       content: aiResponse,
       timestamp: new Date(),
       metadata: {}
