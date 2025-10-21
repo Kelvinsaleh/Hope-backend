@@ -113,9 +113,16 @@ export const sendMessage = async (req: Request, res: Response) => {
     try {
       const { GoogleGenerativeAI } = await import('@google/generative-ai');
       
-      if (process.env.GEMINI_API_KEY) {
-        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+      if (!process.env.GEMINI_API_KEY) {
+        logger.error("GEMINI_API_KEY environment variable is not set!");
+        throw new Error("GEMINI_API_KEY not configured");
+      }
+      
+      logger.info("Initializing Gemini AI with key:", process.env.GEMINI_API_KEY.substring(0, 10) + "...");
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+      
+      logger.info("Gemini model initialized successfully");
         
         // Get ALL conversation history for full context (not just last 10)
         const conversationHistory = session.messages.map(msg => 
@@ -207,16 +214,19 @@ Please provide a warm, supportive response that:
 
 Keep your response conversational (2-4 paragraphs), empathetic, and focused on the user's current message while maintaining therapeutic continuity.`;
 
+        logger.info("Sending request to Gemini AI...");
         const result = await model.generateContent(enhancedPrompt);
         const response = await result.response;
         aiResponse = response.text();
         
         logger.info(`AI response generated for session ${sessionId} with enhanced memory context`);
-      } else {
-        logger.warn("GEMINI_API_KEY not found, using fallback response");
-      }
-    } catch (aiError) {
-      logger.warn("AI response generation failed, using fallback:", aiError);
+    } catch (aiError: any) {
+      logger.error("AI response generation failed:", {
+        error: aiError.message || aiError,
+        stack: aiError.stack,
+        name: aiError.name
+      });
+      // Keep using fallback response
     }
 
     // Add AI response to session
