@@ -135,74 +135,79 @@ const sendMessage = async (req, res) => {
         let aiResponse = "I'm here to support you. Could you tell me more about what's on your mind?";
         try {
             const { GoogleGenerativeAI } = await Promise.resolve().then(() => __importStar(require('@google/generative-ai')));
-            if (process.env.GEMINI_API_KEY) {
-                const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-                const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
-                // Get ALL conversation history for full context (not just last 10)
-                const conversationHistory = session.messages.map(msg => `${msg.role}: ${msg.content}`).join('\n');
-                // Fetch user's long-term context for better memory
-                let userContext = "";
-                try {
-                    // Get recent journal entries
-                    const { JournalEntry } = await Promise.resolve().then(() => __importStar(require('../models/JournalEntry')));
-                    const recentJournals = await JournalEntry.find({ userId })
-                        .sort({ createdAt: -1 })
-                        .limit(5)
-                        .select('content mood tags createdAt');
-                    if (recentJournals.length > 0) {
-                        userContext += "\n\n**Recent Journal Entries:**\n";
-                        recentJournals.forEach(journal => {
-                            userContext += `- [${new Date(journal.createdAt).toLocaleDateString()}] Mood: ${journal.mood}, Topics: ${journal.tags?.join(', ') || 'none'}\n`;
-                        });
-                    }
-                    // Get recent mood patterns
-                    const { Mood } = await Promise.resolve().then(() => __importStar(require('../models/Mood')));
-                    const recentMoods = await Mood.find({ userId })
-                        .sort({ timestamp: -1 })
-                        .limit(7)
-                        .select('score timestamp');
-                    if (recentMoods.length > 0) {
-                        const avgMood = recentMoods.reduce((sum, m) => sum + (m.score || 50), 0) / recentMoods.length;
-                        userContext += `\n**Recent Mood Pattern:** Average mood ${avgMood.toFixed(1)}/100 over past week\n`;
-                    }
-                    // Get summary of previous sessions
-                    const previousSessions = await ChatSession_1.ChatSession.find({
-                        userId,
-                        sessionId: { $ne: sessionId },
-                        status: 'completed'
-                    })
-                        .sort({ startTime: -1 })
-                        .limit(3)
-                        .select('messages startTime');
-                    if (previousSessions.length > 0) {
-                        userContext += "\n**Key Topics from Recent Sessions:**\n";
-                        previousSessions.forEach((prevSession, idx) => {
-                            const topics = new Set();
-                            prevSession.messages.slice(-5).forEach(msg => {
-                                if (msg.role === 'user') {
-                                    const content = msg.content.toLowerCase();
-                                    if (content.includes('anxiety') || content.includes('worried'))
-                                        topics.add('anxiety');
-                                    if (content.includes('depress') || content.includes('sad'))
-                                        topics.add('mood');
-                                    if (content.includes('work') || content.includes('job'))
-                                        topics.add('work stress');
-                                    if (content.includes('relationship') || content.includes('family'))
-                                        topics.add('relationships');
-                                    if (content.includes('sleep'))
-                                        topics.add('sleep');
-                                }
-                            });
-                            if (topics.size > 0) {
-                                userContext += `- Session ${idx + 1}: ${Array.from(topics).join(', ')}\n`;
+            if (!process.env.GEMINI_API_KEY) {
+                logger_1.logger.error("GEMINI_API_KEY environment variable is not set!");
+                throw new Error("GEMINI_API_KEY not configured");
+            }
+            logger_1.logger.info("Initializing Gemini AI with key:", process.env.GEMINI_API_KEY.substring(0, 10) + "...");
+            const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            logger_1.logger.info("Gemini model initialized successfully");
+            // Get ALL conversation history for full context (not just last 10)
+            const conversationHistory = session.messages.map(msg => `${msg.role}: ${msg.content}`).join('\n');
+            // Fetch user's long-term context for better memory
+            let userContext = "";
+            try {
+                // Get recent journal entries
+                const { JournalEntry } = await Promise.resolve().then(() => __importStar(require('../models/JournalEntry')));
+                const recentJournals = await JournalEntry.find({ userId })
+                    .sort({ createdAt: -1 })
+                    .limit(5)
+                    .select('content mood tags createdAt');
+                if (recentJournals.length > 0) {
+                    userContext += "\n\n**Recent Journal Entries:**\n";
+                    recentJournals.forEach(journal => {
+                        userContext += `- [${new Date(journal.createdAt).toLocaleDateString()}] Mood: ${journal.mood}, Topics: ${journal.tags?.join(', ') || 'none'}\n`;
+                    });
+                }
+                // Get recent mood patterns
+                const { Mood } = await Promise.resolve().then(() => __importStar(require('../models/Mood')));
+                const recentMoods = await Mood.find({ userId })
+                    .sort({ timestamp: -1 })
+                    .limit(7)
+                    .select('score timestamp');
+                if (recentMoods.length > 0) {
+                    const avgMood = recentMoods.reduce((sum, m) => sum + (m.score || 50), 0) / recentMoods.length;
+                    userContext += `\n**Recent Mood Pattern:** Average mood ${avgMood.toFixed(1)}/100 over past week\n`;
+                }
+                // Get summary of previous sessions
+                const previousSessions = await ChatSession_1.ChatSession.find({
+                    userId,
+                    sessionId: { $ne: sessionId },
+                    status: 'completed'
+                })
+                    .sort({ startTime: -1 })
+                    .limit(3)
+                    .select('messages startTime');
+                if (previousSessions.length > 0) {
+                    userContext += "\n**Key Topics from Recent Sessions:**\n";
+                    previousSessions.forEach((prevSession, idx) => {
+                        const topics = new Set();
+                        prevSession.messages.slice(-5).forEach(msg => {
+                            if (msg.role === 'user') {
+                                const content = msg.content.toLowerCase();
+                                if (content.includes('anxiety') || content.includes('worried'))
+                                    topics.add('anxiety');
+                                if (content.includes('depress') || content.includes('sad'))
+                                    topics.add('mood');
+                                if (content.includes('work') || content.includes('job'))
+                                    topics.add('work stress');
+                                if (content.includes('relationship') || content.includes('family'))
+                                    topics.add('relationships');
+                                if (content.includes('sleep'))
+                                    topics.add('sleep');
                             }
                         });
-                    }
+                        if (topics.size > 0) {
+                            userContext += `- Session ${idx + 1}: ${Array.from(topics).join(', ')}\n`;
+                        }
+                    });
                 }
-                catch (contextError) {
-                    logger_1.logger.warn("Could not fetch user context:", contextError);
-                }
-                const enhancedPrompt = `You are a supportive, empathetic AI therapist with memory of the user's journey. Your role is to:
+            }
+            catch (contextError) {
+                logger_1.logger.warn("Could not fetch user context:", contextError);
+            }
+            const enhancedPrompt = `You are a supportive, empathetic AI therapist with memory of the user's journey. Your role is to:
 1. Remember previous conversations and reference them naturally
 2. Show continuity by recalling what the user has shared before
 3. Track their progress and emotional patterns over time
@@ -224,17 +229,19 @@ Please provide a warm, supportive response that:
 - Helps them progress toward their goals
 
 Keep your response conversational (2-4 paragraphs), empathetic, and focused on the user's current message while maintaining therapeutic continuity.`;
-                const result = await model.generateContent(enhancedPrompt);
-                const response = await result.response;
-                aiResponse = response.text();
-                logger_1.logger.info(`AI response generated for session ${sessionId} with enhanced memory context`);
-            }
-            else {
-                logger_1.logger.warn("GEMINI_API_KEY not found, using fallback response");
-            }
+            logger_1.logger.info("Sending request to Gemini AI...");
+            const result = await model.generateContent(enhancedPrompt);
+            const response = await result.response;
+            aiResponse = response.text();
+            logger_1.logger.info(`AI response generated for session ${sessionId} with enhanced memory context`);
         }
         catch (aiError) {
-            logger_1.logger.warn("AI response generation failed, using fallback:", aiError);
+            logger_1.logger.error("AI response generation failed:", {
+                error: aiError.message || aiError,
+                stack: aiError.stack,
+                name: aiError.name
+            });
+            // Keep using fallback response
         }
         // Add AI response to session
         const assistantMessage = {
