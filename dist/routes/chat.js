@@ -20,6 +20,8 @@ router.get("/sessions/:sessionId", chat_1.getChatSession);
 router.post("/sessions/:sessionId/messages", premiumLimits_1.enforceChatDailyLimit, chat_1.sendMessage);
 // Get chat history for a session
 router.get("/sessions/:sessionId/history", chat_1.getChatHistory);
+// Complete a chat session
+router.post("/sessions/:sessionId/complete", chat_1.completeChatSession);
 exports.default = router;
 // let response = pm.response.json()
 // pm.globals.set("access_token", response.access_token)
