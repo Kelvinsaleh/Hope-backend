@@ -47,4 +47,4 @@ const MeditationSessionSchema = new Schema<IMeditationSession>(
 );
 
 export const Meditation = mongoose.models.Meditation || mongoose.model<IMeditation>("Meditation", MeditationSchema);
-export const MeditationSession = mongoose.model<IMeditationSession>("MeditationSession", MeditationSessionSchema);
+export const MeditationSession = mongoose.models.MeditationSession || mongoose.model<IMeditationSession>("MeditationSession", MeditationSessionSchema);

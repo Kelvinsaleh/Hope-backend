@@ -13,7 +13,6 @@ import chatRoutes from './routes/chat';
 import memoryEnhancedChatRoutes from './routes/memoryEnhancedChat';
 import journalRoutes from './routes/journal';
 import meditationRoutes from './routes/meditation';
-import meditationSessionRoutes from './routes/meditationSession';
 import moodRoutes from './routes/mood';
 import activityRoutes from './routes/activity';
 import rescuePairRoutes from './routes/rescuePairs';
@@ -140,7 +139,7 @@ app.use("/chat", chatRoutes);
 app.use("/memory-enhanced-chat", memoryEnhancedChatRoutes);
 app.use("/journal", journalRoutes);
 app.use("/meditation", meditationRoutes);
-app.use("/meditation-sessions", meditationSessionRoutes);
+app.use("/meditation-sessions", meditationRoutes); // Use meditation routes for sessions too
 app.use("/mood", moodRoutes);
 app.use("/activity", activityRoutes);
 app.use("/rescue-pairs", rescuePairRoutes);
