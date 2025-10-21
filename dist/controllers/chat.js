@@ -141,7 +141,7 @@ const sendMessage = async (req, res) => {
             }
             logger_1.logger.info("Initializing Gemini AI with key:", process.env.GEMINI_API_KEY.substring(0, 10) + "...");
             const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
             logger_1.logger.info("Gemini model initialized successfully");
             // Get ALL conversation history for full context (not just last 10)
             const conversationHistory = session.messages.map(msg => `${msg.role}: ${msg.content}`).join('\n');
