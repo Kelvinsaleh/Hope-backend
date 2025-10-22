@@ -68,7 +68,13 @@ const corsOptions = {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     
+    // Check if origin is in the allowed list
     if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    // Allow all Vercel preview deployments for this project
+    if (origin.endsWith('.vercel.app') && origin.includes('ai-therapist-agent')) {
       return callback(null, true);
     }
     
@@ -138,7 +144,7 @@ app.use("/auth", authRoutes);
 app.use("/chat", chatRoutes);
 app.use("/memory-enhanced-chat", memoryEnhancedChatRoutes);
 app.use("/journal", journalRoutes);
-app.use("/meditation", meditationRoutes);
+app.use("/meditations", meditationRoutes); // FIXED: Changed from /meditation to /meditations
 app.use("/meditation-sessions", meditationRoutes); // Use meditation routes for sessions too
 app.use("/mood", moodRoutes);
 app.use("/activity", activityRoutes);
