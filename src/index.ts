@@ -7,6 +7,7 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { logger } from './utils/logger';
 
+// Version: 1.0.1 - Email verification enabled
 // Import routes
 import authRoutes from './routes/auth';
 import chatRoutes from './routes/chat';
