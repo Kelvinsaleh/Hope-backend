@@ -11,4 +11,10 @@ const router = express_1.default.Router();
 router.use(auth_1.auth);
 // Track a new mood entry
 router.post("/", moodController_1.createMood);
+// Get mood history
+router.get("/history", moodController_1.getMoodHistory);
+// Get mood statistics
+router.get("/stats", moodController_1.getMoodStats);
+// Get recent moods
+router.get("/", moodController_1.getRecentMoods);
 exports.default = router;

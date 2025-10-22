@@ -53,4 +53,4 @@ const MeditationSessionSchema = new mongoose_1.Schema({
     notes: { type: String },
 }, { timestamps: true });
 exports.Meditation = mongoose_1.default.models.Meditation || mongoose_1.default.model("Meditation", MeditationSchema);
-exports.MeditationSession = mongoose_1.default.model("MeditationSession", MeditationSessionSchema);
+exports.MeditationSession = mongoose_1.default.models.MeditationSession || mongoose_1.default.model("MeditationSession", MeditationSessionSchema);

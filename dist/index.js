@@ -127,6 +127,7 @@ app.use("/chat", chat_1.default);
 app.use("/memory-enhanced-chat", memoryEnhancedChat_1.default);
 app.use("/journal", journal_1.default);
 app.use("/meditation", meditation_1.default);
+app.use("/meditation-sessions", meditation_1.default); // Use meditation routes for sessions too
 app.use("/mood", mood_1.default);
 app.use("/activity", activity_1.default);
 app.use("/rescue-pairs", rescuePairs_1.default);
