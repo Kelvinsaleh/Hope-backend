@@ -39,6 +39,9 @@ const UserSchema = new mongoose_1.Schema({
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
+    isEmailVerified: { type: Boolean, default: false },
+    verificationCode: { type: String },
+    verificationCodeExpiry: { type: Date },
     lastActive: { type: Date, default: Date.now },
     status: {
         type: String,

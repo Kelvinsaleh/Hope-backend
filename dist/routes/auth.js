@@ -9,6 +9,8 @@ const auth_1 = require("../middleware/auth");
 const router = express_1.default.Router();
 router.post("/register", authController_1.register);
 router.post("/login", authController_1.login);
+router.post("/verify-email", authController_1.verifyEmail);
+router.post("/resend-code", authController_1.resendVerificationCode);
 router.post("/logout", auth_1.auth, authController_1.logout);
 router.get("/me", auth_1.auth, authController_1.me);
 exports.default = router;
