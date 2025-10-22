@@ -4,6 +4,9 @@ export interface IUser extends Document {
   name: string;
   email: string;
   password: string;
+  isEmailVerified?: boolean;
+  verificationCode?: string;
+  verificationCodeExpiry?: Date;
   lastActive?: Date;
   status?: 'online' | 'away' | 'offline' | 'suspended';
   subscription?: {
@@ -27,6 +30,9 @@ const UserSchema = new Schema<IUser>(
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
+    isEmailVerified: { type: Boolean, default: false },
+    verificationCode: { type: String },
+    verificationCodeExpiry: { type: Date },
     lastActive: { type: Date, default: Date.now },
     status: { 
       type: String, 
