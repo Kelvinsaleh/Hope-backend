@@ -23,7 +23,24 @@ class EmailService {
     const emailPort = parseInt(process.env.EMAIL_PORT || '587');
 
     if (!emailUser || !emailPass) {
-      logger.warn('Email service not configured. EMAIL_USER and EMAIL_PASSWORD environment variables are required.');
+      logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      logger.error('❌ EMAIL SERVICE NOT CONFIGURED - OTP EMAILS WILL NOT BE SENT!');
+      logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      logger.error('');
+      logger.error('Required environment variables missing:');
+      if (!emailUser) logger.error('  ❌ EMAIL_USER is not set');
+      if (!emailPass) logger.error('  ❌ EMAIL_PASSWORD is not set');
+      logger.error('');
+      logger.error('📖 Setup Guide: See Hope-backend/EMAIL_SETUP_GUIDE.md');
+      logger.error('🔗 Quick Start: https://myaccount.google.com/apppasswords');
+      logger.error('');
+      logger.error('Add to your .env file:');
+      logger.error('  EMAIL_USER=your-email@gmail.com');
+      logger.error('  EMAIL_PASSWORD=your-16-char-app-password');
+      logger.error('  EMAIL_HOST=smtp.gmail.com');
+      logger.error('  EMAIL_PORT=587');
+      logger.error('');
+      logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       this.isConfigured = false;
       return;
     }
@@ -37,30 +54,49 @@ class EmailService {
           user: emailUser,
           pass: emailPass,
         },
+        // Add connection timeout
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
       });
 
       this.isConfigured = true;
-      logger.info('Email service initialized successfully');
-    } catch (error) {
-      logger.error('Failed to initialize email service:', error);
+      logger.info('✅ Email service initialized successfully');
+      logger.info(`📧 Using: ${emailUser} via ${emailHost}:${emailPort}`);
+    } catch (error: any) {
+      logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      logger.error('❌ Failed to initialize email service');
+      logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      logger.error('Error:', error?.message || error);
+      logger.error('');
+      logger.error('Common issues:');
+      logger.error('  1. Invalid EMAIL_PASSWORD (use App Password for Gmail)');
+      logger.error('  2. 2FA not enabled on Gmail account');
+      logger.error('  3. Incorrect SMTP host or port');
+      logger.error('  4. Firewall blocking SMTP connection');
+      logger.error('');
+      logger.error('📖 See EMAIL_SETUP_GUIDE.md for detailed instructions');
+      logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       this.isConfigured = false;
     }
   }
 
   async sendEmail(options: EmailOptions): Promise<boolean> {
     if (!this.isConfigured || !this.transporter) {
-      logger.warn('Email service not configured. Skipping email send.');
+      logger.error(`❌ Cannot send email to ${options.to} - Email service not configured`);
+      logger.error('📧 Subject: ' + options.subject);
       // In development, log the email content
       if (process.env.NODE_ENV === 'development') {
-        logger.info('Development mode - Email would have been sent:');
+        logger.info('━━━ Development mode - Email would have been sent ━━━');
         logger.info(`To: ${options.to}`);
         logger.info(`Subject: ${options.subject}`);
         logger.info(`Content: ${options.text || options.html}`);
+        logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       }
       return false;
     }
 
     try {
+      logger.info(`📤 Attempting to send email to ${options.to}...`);
       const info = await this.transporter.sendMail({
         from: `"Hope Therapy" <${process.env.EMAIL_USER}>`,
         to: options.to,
@@ -69,10 +105,44 @@ class EmailService {
         html: options.html,
       });
 
-      logger.info(`Email sent successfully to ${options.to}. Message ID: ${info.messageId}`);
+      logger.info(`✅ Email sent successfully to ${options.to}`);
+      logger.info(`📬 Message ID: ${info.messageId}`);
+      logger.info(`📊 Response: ${info.response}`);
       return true;
-    } catch (error) {
-      logger.error('Failed to send email:', error);
+    } catch (error: any) {
+      logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      logger.error(`❌ Failed to send email to ${options.to}`);
+      logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      logger.error('Error details:', error);
+      
+      if (error.code) {
+        logger.error(`Error code: ${error.code}`);
+      }
+      
+      if (error.response) {
+        logger.error(`SMTP Response: ${error.response}`);
+      }
+      
+      // Provide helpful error messages
+      if (error.code === 'EAUTH') {
+        logger.error('');
+        logger.error('🔐 Authentication failed. Common causes:');
+        logger.error('  1. Incorrect EMAIL_PASSWORD (must use App Password for Gmail)');
+        logger.error('  2. 2FA not enabled on Gmail account');
+        logger.error('  3. App Password not generated correctly');
+        logger.error('');
+        logger.error('🔗 Generate Gmail App Password: https://myaccount.google.com/apppasswords');
+      } else if (error.code === 'ETIMEDOUT' || error.code === 'ECONNECTION') {
+        logger.error('');
+        logger.error('🌐 Connection timeout. Common causes:');
+        logger.error('  1. SMTP port blocked by firewall');
+        logger.error('  2. Incorrect EMAIL_HOST or EMAIL_PORT');
+        logger.error('  3. Network connectivity issues');
+        logger.error('');
+        logger.error(`Current config: ${process.env.EMAIL_HOST}:${process.env.EMAIL_PORT}`);
+      }
+      
+      logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return false;
     }
   }

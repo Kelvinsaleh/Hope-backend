@@ -1,0 +1,25 @@
+# ========================================
+# ADD THESE LINES TO YOUR .env FILE
+# ========================================
+# Copy and paste these into Hope-backend/.env
+# Then replace the placeholder values with your actual credentials
+
+# Email Service Configuration (Required for OTP emails)
+EMAIL_USER=your-email@gmail.com
+EMAIL_PASSWORD=your-16-char-app-password
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+
+# Also update NODE_ENV to production if you haven't already
+NODE_ENV=production
+
+# ========================================
+# INSTRUCTIONS
+# ========================================
+# 1. Get Gmail App Password: https://myaccount.google.com/apppasswords
+# 2. Replace 'your-email@gmail.com' with your actual Gmail
+# 3. Replace 'your-16-char-app-password' with the generated password
+# 4. Save the file
+# 5. Restart your backend server
+# 6. Check logs for: "✅ Email service initialized successfully"
+

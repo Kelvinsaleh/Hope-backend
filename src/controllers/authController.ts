@@ -46,12 +46,23 @@ export const register = async (req: Request, res: Response) => {
         const emailSent = await emailService.sendVerificationCode(email, verificationCode, name);
         logger.info(`Verification email ${emailSent ? 'sent' : 'failed'} for existing unverified user: ${email}`);
         
-        return res.status(200).json({
+        const response: any = {
           success: true,
-          message: "Verification code sent to your email. Please verify your account.",
+          message: emailSent
+            ? "Verification code sent to your email. Please verify your account."
+            : "Email service is currently unavailable.",
           requiresVerification: true,
           userId: existingUser._id,
-        });
+        };
+
+        // In development mode, include the OTP in the response when email fails
+        if (process.env.NODE_ENV === 'development' && !emailSent) {
+          response.devOTP = verificationCode;
+          response.message = "Verification code generated! (Dev Mode: Email not sent, use devOTP below)";
+          logger.info(`[DEV MODE] OTP for ${email}: ${verificationCode}`);
+        }
+        
+        return res.status(200).json(response);
       }
       
       return res.status(409).json({ 
@@ -83,12 +94,23 @@ export const register = async (req: Request, res: Response) => {
     logger.info(`Verification email ${emailSent ? 'sent' : 'failed'} for new user: ${email}`);
     
     // Respond - Don't create session or token yet
-    res.status(201).json({
+    const response: any = {
       success: true,
-      message: "Registration successful! Please check your email for the verification code.",
+      message: emailSent 
+        ? "Registration successful! Please check your email for the verification code."
+        : "Registration successful! Email service is currently unavailable.",
       requiresVerification: true,
       userId: user._id,
-    });
+    };
+
+    // In development mode, include the OTP in the response when email fails
+    if (process.env.NODE_ENV === 'development' && !emailSent) {
+      response.devOTP = verificationCode;
+      response.message = "Registration successful! (Dev Mode: Email not sent, use devOTP below)";
+      logger.info(`[DEV MODE] OTP for ${email}: ${verificationCode}`);
+    }
+    
+    res.status(201).json(response);
   } catch (error) {
     console.error("Registration error:", error);
     res.status(500).json({ 
@@ -385,10 +407,21 @@ export const resendVerificationCode = async (req: Request, res: Response) => {
     
     logger.info(`Verification code resent ${emailSent ? 'successfully' : 'failed'} for user: ${user.email}`);
 
-    res.json({
+    const response: any = {
       success: true,
-      message: "Verification code sent to your email.",
-    });
+      message: emailSent
+        ? "Verification code sent to your email."
+        : "Email service is currently unavailable.",
+    };
+
+    // In development mode, include the OTP in the response when email fails
+    if (process.env.NODE_ENV === 'development' && !emailSent) {
+      response.devOTP = verificationCode;
+      response.message = "Verification code generated! (Dev Mode: Email not sent, use devOTP below)";
+      logger.info(`[DEV MODE] Resent OTP for ${user.email}: ${verificationCode}`);
+    }
+
+    res.json(response);
   } catch (error) {
     console.error("Resend verification code error:", error);
     res.status(500).json({
