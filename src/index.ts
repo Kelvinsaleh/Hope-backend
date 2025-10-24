@@ -146,8 +146,8 @@ app.use("/auth", authRoutes);
 app.use("/chat", chatRoutes);
 app.use("/memory-enhanced-chat", memoryEnhancedChatRoutes);
 app.use("/journal", journalRoutes);
-app.use("/meditations", meditationRoutes); // FIXED: Changed from /meditation to /meditations
-app.use("/meditation-sessions", meditationRoutes); // Use meditation routes for sessions too
+app.use("/meditation", meditationRoutes); // Support /meditation (singular)
+app.use("/meditations", meditationRoutes); // Support /meditations (plural)
 app.use("/mood", moodRoutes);
 app.use("/activity", activityRoutes);
 app.use("/rescue-pairs", rescuePairRoutes);

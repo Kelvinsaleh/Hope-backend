@@ -12,6 +12,7 @@ const genAI = new generative_ai_1.GoogleGenerativeAI(process.env.GEMINI_API_KEY 
 // Get all meditations with search
 const getMeditations = async (req, res) => {
     try {
+        console.log("🎵 Meditation fetch request:", req.query);
         const { search, category, isPremium, limit = 20, page = 1 } = req.query;
         const filter = {};
         // Add search functionality
@@ -27,11 +28,13 @@ const getMeditations = async (req, res) => {
         if (isPremium !== undefined)
             filter.isPremium = isPremium === 'true';
         const skip = (Number(page) - 1) * Number(limit);
+        console.log("🔍 Querying MongoDB with filter:", filter);
         const meditations = await Meditation_1.Meditation.find(filter)
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(Number(limit))
             .lean();
+        console.log("✅ Found meditations:", meditations.length);
         const total = await Meditation_1.Meditation.countDocuments(filter);
         res.json({
             success: true,
@@ -46,6 +49,7 @@ const getMeditations = async (req, res) => {
         });
     }
     catch (error) {
+        console.error("❌ MEDITATION FETCH ERROR:", error);
         logger_1.logger.error("Error fetching meditations:", error);
         res.status(500).json({
             error: "Failed to fetch meditations",

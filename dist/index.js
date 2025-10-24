@@ -133,8 +133,8 @@ app.use("/auth", auth_1.default);
 app.use("/chat", chat_1.default);
 app.use("/memory-enhanced-chat", memoryEnhancedChat_1.default);
 app.use("/journal", journal_1.default);
-app.use("/meditations", meditation_1.default); // FIXED: Changed from /meditation to /meditations
-app.use("/meditation-sessions", meditation_1.default); // Use meditation routes for sessions too
+app.use("/meditation", meditation_1.default); // Support /meditation (singular)
+app.use("/meditations", meditation_1.default); // Support /meditations (plural)
 app.use("/mood", mood_1.default);
 app.use("/activity", activity_1.default);
 app.use("/rescue-pairs", rescuePairs_1.default);

@@ -14,6 +14,8 @@ const genAI = new GoogleGenerativeAI(
 // Get all meditations with search
 export const getMeditations = async (req: Request, res: Response) => {
   try {
+    console.log("🎵 Meditation fetch request:", req.query);
+    
     const { search, category, isPremium, limit = 20, page = 1 } = req.query;
     
     const filter: any = {};
@@ -32,11 +34,15 @@ export const getMeditations = async (req: Request, res: Response) => {
 
     const skip = (Number(page) - 1) * Number(limit);
     
+    console.log("🔍 Querying MongoDB with filter:", filter);
+    
     const meditations = await Meditation.find(filter)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit))
       .lean();
+
+    console.log("✅ Found meditations:", meditations.length);
 
     const total = await Meditation.countDocuments(filter);
 
@@ -52,6 +58,7 @@ export const getMeditations = async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
+    console.error("❌ MEDITATION FETCH ERROR:", error);
     logger.error("Error fetching meditations:", error);
     res.status(500).json({
       error: "Failed to fetch meditations",
