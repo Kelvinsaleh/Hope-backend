@@ -40,13 +40,25 @@ export default router;
 router.get("/profile", async (req, res) => {
   try {
     const userId = new Types.ObjectId(req.user._id);
+    console.log("📖 Profile GET request for user:", userId.toString());
+    
     const existing = await UserProfile.findOne({ userId });
     if (!existing) {
+      console.log("📝 No profile found, creating new one");
       await UserProfile.create({ userId });
     }
+    
     const profile = await UserProfile.findOne({ userId }).lean();
+    console.log("✅ Loaded profile from DB:", profile ? {
+      userId: (profile as any).userId,
+      goals: (profile as any).goals,
+      challenges: (profile as any).challenges,
+      communicationStyle: (profile as any).communicationStyle
+    } : null);
+    
     res.json({ success: true, data: profile || null });
   } catch (error) {
+    console.error("❌ Profile GET error:", error);
     res.status(500).json({ success: false, error: "Failed to get profile" });
   }
 });
@@ -70,10 +82,21 @@ router.post("/profile", async (req, res) => {
 router.put("/profile", async (req, res) => {
   try {
     const userId = new Types.ObjectId(req.user._id);
-    await UserProfile.updateOne({ userId }, { $set: req.body }, { upsert: true });
+    console.log("📝 Profile update request:", { userId: userId.toString(), body: req.body });
+    
+    const updateResult = await UserProfile.updateOne(
+      { userId }, 
+      { $set: req.body }, 
+      { upsert: true }
+    );
+    console.log("📊 Update result:", updateResult);
+    
     const updated = await UserProfile.findOne({ userId }).lean();
+    console.log("✅ Updated profile from DB:", updated);
+    
     res.json({ success: true, data: updated });
   } catch (error) {
+    console.error("❌ Profile update error:", error);
     res.status(500).json({ success: false, error: "Failed to update profile" });
   }
 });
