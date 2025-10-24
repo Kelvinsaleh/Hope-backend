@@ -146,11 +146,13 @@ const login = async (req, res) => {
                 userId: user._id,
             });
         }
-        // Generate JWT token
-        const token = jsonwebtoken_1.default.sign({ userId: user._id }, process.env.JWT_SECRET || "your-secret-key", { expiresIn: "24h" });
-        // Create session
+        // Generate JWT token with additional entropy to prevent duplicates
+        const token = jsonwebtoken_1.default.sign({ userId: user._id, timestamp: Date.now(), random: Math.random() }, process.env.JWT_SECRET || "your-secret-key", { expiresIn: "24h" });
+        // Create session - delete any old sessions with same token first
         const expiresAt = new Date();
         expiresAt.setHours(expiresAt.getHours() + 24);
+        // Safety: Delete any existing session with this token (prevents duplicate key error)
+        await Session_1.Session.deleteOne({ token }).catch(() => { });
         const session = new Session_1.Session({
             userId: user._id,
             token,

@@ -110,8 +110,8 @@ app.use((req, res, next) => {
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-Requested-With, Accept, Origin');
     next();
 });
-app.use(express_1.default.json({ limit: '10mb' }));
-app.use(express_1.default.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express_1.default.json({ limit: '200mb' }));
+app.use(express_1.default.urlencoded({ extended: true, limit: '200mb' }));
 // Custom morgan format for better logging
 const morganFormat = process.env.NODE_ENV === 'production'
     ? 'combined'
