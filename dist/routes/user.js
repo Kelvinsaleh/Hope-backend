@@ -45,12 +45,10 @@ router.get("/profile", async (req, res) => {
             await UserProfile_1.UserProfile.create({ userId });
         }
         const profile = await UserProfile_1.UserProfile.findOne({ userId }).lean();
-        console.log("✅ Loaded profile from DB:", profile ? {
-            userId: profile.userId,
-            goals: profile.goals,
-            challenges: profile.challenges,
-            communicationStyle: profile.communicationStyle
-        } : null);
+        // DETAILED DEBUG LOGGING
+        console.log("🔍 RAW PROFILE FROM MONGODB:", JSON.stringify(profile, null, 2));
+        console.log("🔍 GOALS LENGTH:", profile?.goals?.length || 0);
+        console.log("🔍 CHALLENGES LENGTH:", profile?.challenges?.length || 0);
         res.json({ success: true, data: profile || null });
     }
     catch (error) {

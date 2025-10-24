@@ -49,12 +49,11 @@ router.get("/profile", async (req, res) => {
     }
     
     const profile = await UserProfile.findOne({ userId }).lean();
-    console.log("✅ Loaded profile from DB:", profile ? {
-      userId: (profile as any).userId,
-      goals: (profile as any).goals,
-      challenges: (profile as any).challenges,
-      communicationStyle: (profile as any).communicationStyle
-    } : null);
+    
+    // DETAILED DEBUG LOGGING
+    console.log("🔍 RAW PROFILE FROM MONGODB:", JSON.stringify(profile, null, 2));
+    console.log("🔍 GOALS LENGTH:", (profile as any)?.goals?.length || 0);
+    console.log("🔍 CHALLENGES LENGTH:", (profile as any)?.challenges?.length || 0);
     
     res.json({ success: true, data: profile || null });
   } catch (error) {
