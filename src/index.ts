@@ -27,6 +27,7 @@ import realtimeRoutes from './routes/realtime';
 import playlistRoutes from './routes/playlist';
 import userRoutes from './routes/user';
 import cbtRoutes from './routes/cbt';
+import cleanupRoutes from './routes/cleanup';
 import { connectDB } from './utils/db';
 import { healthCheck, readinessCheck, keepAlive } from './controllers/healthController';
 
@@ -160,6 +161,7 @@ app.use("/realtime", realtimeRoutes);
 app.use("/playlists", playlistRoutes);
 app.use("/user", userRoutes);
 app.use("/cbt", cbtRoutes);
+app.use("/cleanup", cleanupRoutes);
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

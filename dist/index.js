@@ -31,6 +31,7 @@ const realtime_1 = __importDefault(require("./routes/realtime"));
 const playlist_1 = __importDefault(require("./routes/playlist"));
 const user_1 = __importDefault(require("./routes/user"));
 const cbt_1 = __importDefault(require("./routes/cbt"));
+const cleanup_1 = __importDefault(require("./routes/cleanup"));
 const db_1 = require("./utils/db");
 const healthController_1 = require("./controllers/healthController");
 // Load environment variables
@@ -147,6 +148,7 @@ app.use("/realtime", realtime_1.default);
 app.use("/playlists", playlist_1.default);
 app.use("/user", user_1.default);
 app.use("/cbt", cbt_1.default);
+app.use("/cleanup", cleanup_1.default);
 // Error handling middleware
 app.use((err, req, res, next) => {
     logger_1.logger.error('Unhandled error:', {
