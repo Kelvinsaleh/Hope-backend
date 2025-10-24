@@ -256,6 +256,125 @@ class EmailService {
             text,
         });
     }
+    async sendPasswordResetCode(email, code, name) {
+        const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+          }
+          .container {
+            background-color: #f9fafb;
+            border-radius: 12px;
+            padding: 40px;
+            margin: 20px 0;
+          }
+          .header {
+            text-align: center;
+            margin-bottom: 30px;
+          }
+          .logo {
+            font-size: 32px;
+            font-weight: bold;
+            color: #6366f1;
+            margin-bottom: 10px;
+          }
+          .code-box {
+            background-color: white;
+            border: 2px solid #ef4444;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            margin: 30px 0;
+          }
+          .code {
+            font-size: 42px;
+            font-weight: bold;
+            letter-spacing: 8px;
+            color: #ef4444;
+            font-family: 'Courier New', monospace;
+          }
+          .info {
+            color: #666;
+            font-size: 14px;
+            margin-top: 20px;
+          }
+          .warning {
+            background-color: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+          }
+          .footer {
+            text-align: center;
+            color: #999;
+            font-size: 12px;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <div class="logo">✨ Hope Therapy</div>
+            <p>Password Reset Request</p>
+          </div>
+          
+          <h2>Hello ${name}!</h2>
+          <p>We received a request to reset your Hope Therapy account password. Use the code below to reset your password:</p>
+          
+          <div class="code-box">
+            <div class="code">${code}</div>
+            <div class="info">This code will expire in 15 minutes</div>
+          </div>
+          
+          <p>Enter this code on the password reset page to create a new password.</p>
+          
+          <div class="warning">
+            <strong>⚠️ Security Note:</strong> If you didn't request a password reset, please ignore this email. Your account is still secure.
+          </div>
+          
+          <p>Never share this code with anyone. Hope Therapy will never ask you for this code via phone or email.</p>
+          
+          <div class="footer">
+            <p>© ${new Date().getFullYear()} Hope Therapy. All rights reserved.</p>
+            <p>Your partner in mental wellness and growth.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+        const text = `
+      Hello ${name}!
+      
+      We received a request to reset your Hope Therapy account password. Use the code below to reset your password:
+      
+      Reset Code: ${code}
+      
+      This code will expire in 15 minutes.
+      
+      If you didn't request a password reset, please ignore this email. Your account is still secure.
+      
+      Best regards,
+      Hope Therapy Team
+    `;
+        return this.sendEmail({
+            to: email,
+            subject: 'Reset Your Hope Therapy Password',
+            html,
+            text,
+        });
+    }
     async sendWelcomeEmail(email, name) {
         const html = `
       <!DOCTYPE html>
