@@ -153,15 +153,8 @@ export const login = async (req: Request, res: Response) => {
       });
     }
 
-    // Check if email is verified
-    if (!user.isEmailVerified) {
-      return res.status(403).json({
-        success: false,
-        message: "Please verify your email before logging in.",
-        requiresVerification: true,
-        userId: user._id,
-      });
-    }
+    // Note: Email verification is encouraged but not required for login
+    // Users can login even if not verified, but may have limited features
 
     // Generate JWT token with additional entropy to prevent duplicates
     const token = jwt.sign(

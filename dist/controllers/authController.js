@@ -137,15 +137,8 @@ const login = async (req, res) => {
                 message: "Invalid email or password."
             });
         }
-        // Check if email is verified
-        if (!user.isEmailVerified) {
-            return res.status(403).json({
-                success: false,
-                message: "Please verify your email before logging in.",
-                requiresVerification: true,
-                userId: user._id,
-            });
-        }
+        // Note: Email verification is encouraged but not required for login
+        // Users can login even if not verified, but may have limited features
         // Generate JWT token with additional entropy to prevent duplicates
         const token = jsonwebtoken_1.default.sign({ userId: user._id, timestamp: Date.now(), random: Math.random() }, process.env.JWT_SECRET || "your-secret-key", { expiresIn: "24h" });
         // Create session - delete any old sessions with same token first
