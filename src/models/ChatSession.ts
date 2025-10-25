@@ -22,9 +22,6 @@ export interface IChatSession extends Document {
   endTime?: Date;
   status: "active" | "completed" | "archived";
   messages: IChatMessage[];
-  currentMood?: string;
-  activeTone?: string;
-  sessionSummary?: string;
 }
 
 const chatMessageSchema = new Schema<IChatMessage>({
@@ -52,9 +49,6 @@ const chatSessionSchema = new Schema<IChatSession>({
     enum: ["active", "completed", "archived"],
   },
   messages: [chatMessageSchema],
-  currentMood: { type: String },
-  activeTone: { type: String },
-  sessionSummary: { type: String },
 });
 
 export const ChatSession = model<IChatSession>(
