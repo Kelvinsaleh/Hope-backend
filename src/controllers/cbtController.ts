@@ -291,9 +291,9 @@ Provide a JSON response with:
 1. copingStrategies: Array of 4-6 brief, actionable coping strategies
 2. urgency: "immediate", "moderate", or "routine"
 3. suggestedActivities: Array of 3-5 simple activities
-4. supportiveMessage: A warm, brief message (2-3 sentences, 30-40 words max)
+4. supportiveMessage: A simple, genuine message (2-3 sentences, 30-40 words max). Talk like a real person, not a therapist. No clichés.
 
-Format as valid JSON only. Keep supportiveMessage conversational and empathetic.`;
+Format as valid JSON only. Keep supportiveMessage natural and real.`;
     } else if (type === 'general_insights') {
       prompt = `You are a CBT therapist. Provide general CBT insights for:
 

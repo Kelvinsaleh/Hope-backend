@@ -1,88 +1,88 @@
 {
   "microExpressions": {
     "happy": {
-      "affirmations": ["haha,", "that's awesome!", "I love that!", "look at you go!"],
-      "reflections": ["that spark in your words is beautiful.", "I can feel the lightness in this."],
-      "questions": ["what part made you smile the most?", "what's making you feel so alive right now?"]
+      "affirmations": ["nice!", "that's great!", "love that", "awesome"],
+      "reflections": ["you sound good.", "that's really cool."],
+      "questions": ["what made you smile?", "what's got you feeling good?"]
     },
     "calm": {
-      "affirmations": ["mm-hmm,", "yeah,", "makes sense.", "you know,"],
-      "reflections": ["those quiet moments hit different, huh?", "that ease shows in your words."],
-      "questions": ["what made it feel so peaceful today?", "what are you noticing in the stillness?"]
+      "affirmations": ["yeah", "makes sense", "I hear you", "for sure"],
+      "reflections": ["sounds peaceful.", "that's nice."],
+      "questions": ["what made it feel good?", "what's been helping?"]
     },
     "sad": {
-      "affirmations": ["hey…", "hmm,", "I get that.", "yeah…"],
-      "reflections": ["that kind of weight doesn't just sit on your mind; it lingers, right?", "pain like that doesn't always have language."],
-      "questions": ["what's been sitting on your heart lately?", "what do you wish someone would tell you right now?"]
+      "affirmations": ["hey", "I get that", "yeah", "that's tough"],
+      "reflections": ["that sounds really hard.", "that's a lot to carry."],
+      "questions": ["what's been weighing on you?", "wanna talk about it?"]
     },
     "stressed": {
-      "affirmations": ["breathe for a sec.", "yeah…", "take your time.", "hey…"],
-      "reflections": ["your mind's carrying so many tabs open right now.", "that sounds exhausting to hold."],
-      "questions": ["what's shouting the loudest in your head?", "what's one thing you could close, just for a bit?"]
+      "affirmations": ["take a breath", "yeah", "take your time", "hey"],
+      "reflections": ["that sounds overwhelming.", "that's a lot at once."],
+      "questions": ["what's stressing you most?", "what's one thing you could let go of?"]
     },
     "tired": {
-      "affirmations": ["hmm,", "I hear you.", "yeah,", "you don't have to rush."],
-      "reflections": ["that kind of tired sits deeper than sleep can fix.", "sounds like your heart's asking for a pause."],
-      "questions": ["when was the last time you really rested — not just stopped moving?", "what usually helps you reset?"]
+      "affirmations": ["I hear you", "yeah", "no rush", "take your time"],
+      "reflections": ["you sound exhausted.", "that's really draining."],
+      "questions": ["when did you last get real rest?", "what helps you recharge?"]
     },
     "angry": {
-      "affirmations": ["yeah,", "I get that.", "makes sense.", "that's fair."],
-      "reflections": ["that frustration is real — it's okay to feel it.", "anger's often what shows up when something matters to us."],
-      "questions": ["what do you wish could've gone differently?", "what would feel fair to you?"]
+      "affirmations": ["yeah", "I get that", "makes sense", "that's fair"],
+      "reflections": ["that's frustrating.", "you have a right to be upset."],
+      "questions": ["what happened?", "what would've been better?"]
     },
     "anxious": {
-      "affirmations": ["hey…", "breathe.", "you're okay.", "hmm,"],
-      "reflections": ["anxiety can make the future feel like it's rushing at you.", "that spiral is exhausting to live in."],
-      "questions": ["what's the worry underneath all the other worries?", "what would help you feel a little safer right now?"]
+      "affirmations": ["hey", "breathe", "you're okay", "it's okay"],
+      "reflections": ["that sounds really anxious.", "that's a lot of worry."],
+      "questions": ["what's worrying you most?", "what would help right now?"]
     },
     "hopeful": {
-      "affirmations": ["I love that.", "that's beautiful.", "yeah,", "mm-hmm,"],
-      "reflections": ["hope's a light that flickers, not burns — and that's okay.", "that spark's still there, even in small ways."],
-      "questions": ["what's keeping that hope alive?", "what does that possibility feel like for you?"]
+      "affirmations": ["love that", "that's nice", "yeah", "that's good"],
+      "reflections": ["that's hopeful.", "things are looking up."],
+      "questions": ["what's giving you hope?", "what are you looking forward to?"]
     },
     "lonely": {
-      "affirmations": ["hey…", "I hear you.", "yeah,", "that's heavy."],
-      "reflections": ["loneliness has its own kind of silence, doesn't it?", "even when it feels that way, you're not as alone as your mind says."],
-      "questions": ["what do you miss most about connection?", "what helps you feel less alone, even just a little?"]
+      "affirmations": ["hey", "I hear you", "yeah", "that's tough"],
+      "reflections": ["that sounds lonely.", "feeling alone is hard."],
+      "questions": ["what do you miss?", "what helps when you feel like this?"]
     },
     "grateful": {
-      "affirmations": ["that's lovely.", "I love that.", "mm-hmm,", "beautiful."],
-      "reflections": ["gratitude's soft like sunlight through curtains — it touches everything.", "that warmth shows in your words."],
-      "questions": ["what moment made you feel that today?", "what are you most grateful for right now?"]
+      "affirmations": ["that's nice", "love that", "that's great", "that's good"],
+      "reflections": ["you sound grateful.", "that's really sweet."],
+      "questions": ["what made you feel that way?", "what are you grateful for?"]
     },
     "neutral": {
-      "affirmations": ["hmm,", "yeah,", "I hear you.", "makes sense."],
-      "reflections": ["those quiet stretches — they can feel empty, but sometimes they're how we heal.", "neutral can be its own kind of peace."],
-      "questions": ["what do you usually find in these moments?", "anything on your mind today?"]
+      "affirmations": ["yeah", "I hear you", "makes sense", "okay"],
+      "reflections": ["sounds like things are okay.", "pretty chill day?"],
+      "questions": ["how are you doing?", "what's on your mind?"]
     }
   },
   
   "depthCues": {
     "reflective": [
-      "yeah…",
-      "hmm,",
-      "you know,",
-      "I've felt that kind of silence before.",
-      "sometimes the quiet speaks louder."
+      "yeah",
+      "you know",
+      "that makes sense",
+      "I get it",
+      "for sure"
     ],
     "curious": [
-      "what do you think that feeling's trying to tell you?",
-      "why do you think that moment stood out?",
-      "what's beneath that?",
-      "what does that mean to you?"
+      "what do you think about that?",
+      "why do you think that is?",
+      "what's behind that?",
+      "how does that feel?"
     ],
     "grounding": [
-      "breathe for a sec.",
-      "you're okay here.",
-      "one step at a time, okay?",
-      "there's no rush.",
-      "just be here for now."
+      "take a breath",
+      "you're okay",
+      "one thing at a time",
+      "no rush",
+      "just focus on now"
     ],
     "hopeful": [
-      "that spark's still there, even in small ways.",
-      "keep holding that little piece of light.",
-      "the world's still soft in places.",
-      "hope flickers — it doesn't have to burn bright."
+      "there's still hope",
+      "things can get better",
+      "you've got this",
+      "hang in there"
     ]
   },
 

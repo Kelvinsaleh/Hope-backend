@@ -3,6 +3,12 @@ import { ChatSession, IChatMessage } from "../models/ChatSession";
 import { Types } from "mongoose";
 import { logger } from "../utils/logger";
 import { buildHopePrompt, normalizeMood } from "../utils/hopePersonality";
+import { 
+  getRelevantLongTermMemories, 
+  getShortTermMemory, 
+  buildSystemMemory,
+  extractAndStoreInsights 
+} from "../utils/memoryLayers";
 
 export const createChatSession = async (req: Request, res: Response) => {
   try {
@@ -124,85 +130,69 @@ export const sendMessage = async (req: Request, res: Response) => {
       const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
       
       logger.info("Gemini model initialized successfully");
+      logger.info("🧠 Using 3-Layer Memory System for fast + deep responses");
         
-        // Get ALL conversation history for full context (not just last 10)
-        const conversationHistory = session.messages.map(msg => 
-          `${msg.role}: ${msg.content}`
-        ).join('\n');
+        // ===== 3-LAYER MEMORY SYSTEM =====
         
-        // Fetch user's long-term context for better memory
-        let userContext = "";
+        // LAYER 1: Get current mood
         let currentUserMood = "neutral";
-        
         try {
-          // Get current mood from most recent mood entry
           const { Mood } = await import('../models/Mood');
           const latestMood = await Mood.findOne({ userId })
             .sort({ timestamp: -1 })
             .select('score');
-          
           if (latestMood) {
             currentUserMood = normalizeMood(latestMood.score || 5);
-            userContext += `\n**Current Mood:** ${currentUserMood} (${latestMood.score || 'N/A'}/10)\n`;
           }
-
-          // Get recent journal entries
-          const { JournalEntry } = await import('../models/JournalEntry');
-          const recentJournals = await JournalEntry.find({ userId })
-            .sort({ createdAt: -1 })
-            .limit(5)
-            .select('content mood tags createdAt');
-          
-          if (recentJournals.length > 0) {
-            userContext += "\n**Recent Journal Entries:**\n";
-            recentJournals.forEach(journal => {
-              userContext += `- [${new Date(journal.createdAt).toLocaleDateString()}] Mood: ${journal.mood}, Topics: ${journal.tags?.join(', ') || 'none'}\n`;
-            });
-          }
-
-          // Get recent mood patterns
-          const recentMoods = await Mood.find({ userId })
-            .sort({ timestamp: -1 })
-            .limit(7)
-            .select('score timestamp');
-          
-          if (recentMoods.length > 0) {
-            const avgMood = recentMoods.reduce((sum, m) => sum + (m.score || 5), 0) / recentMoods.length;
-            userContext += `\n**Recent Mood Pattern:** Average ${avgMood.toFixed(1)}/10 over past week\n`;
-          }
-
-          // Get summary of previous sessions
-          const previousSessions = await ChatSession.find({ 
-            userId,
-            sessionId: { $ne: sessionId },
-            status: 'completed'
-          })
-            .sort({ startTime: -1 })
-            .limit(3)
-            .select('messages startTime');
-          
-          if (previousSessions.length > 0) {
-            userContext += "\n**Key Topics from Recent Sessions:**\n";
-            previousSessions.forEach((prevSession, idx) => {
-              const topics = new Set<string>();
-              prevSession.messages.slice(-5).forEach(msg => {
-                if (msg.role === 'user') {
-                  const content = msg.content.toLowerCase();
-                  if (content.includes('anxiety') || content.includes('worried')) topics.add('anxiety');
-                  if (content.includes('depress') || content.includes('sad')) topics.add('mood');
-                  if (content.includes('work') || content.includes('job')) topics.add('work stress');
-                  if (content.includes('relationship') || content.includes('family')) topics.add('relationships');
-                  if (content.includes('sleep')) topics.add('sleep');
-                }
-              });
-              if (topics.size > 0) {
-                userContext += `- Session ${idx + 1}: ${Array.from(topics).join(', ')}\n`;
-              }
-            });
-          }
-        } catch (contextError) {
-          logger.warn("Could not fetch user context:", contextError);
+        } catch (err) {
+          logger.warn("Could not fetch mood:", err);
         }
+        
+        // LAYER 1: Long-Term Memory (only top 3 most relevant memories)
+        logger.info("📚 Fetching relevant long-term memories...");
+        const longTermMemories = await getRelevantLongTermMemories(
+          userId.toString(),
+          message,
+          currentUserMood,
+          3  // Only 3 most relevant items
+        );
+        
+        // LAYER 2: Short-Term Memory (last 10 turns + summary)
+        logger.info("💬 Fetching short-term conversation context...");
+        const shortTermMemory = await getShortTermMemory(sessionId, 10);
+        
+        // LAYER 3: System Memory (lightweight, changes per request)
+        logger.info("⚙️ Building system memory for current mood...");
+        const recentThemes = longTermMemories.map(m => m.type);
+        const systemMemory = buildSystemMemory(currentUserMood, recentThemes);
+        
+        // Update session with current state
+        session.currentMood = currentUserMood;
+        session.activeTone = systemMemory.toneMode;
+        
+        // ===== BUILD COMPACT CONTEXT =====
+        
+        // Build compact user context (max ~200 tokens)
+        let userContext = `\n**Current State:** ${systemMemory.emotionalContext}\n`;
+        userContext += `**Approach:** ${systemMemory.activeApproach}\n`;
+        
+        if (shortTermMemory.summary) {
+          userContext += `\n**Previous context:** ${shortTermMemory.summary}\n`;
+        }
+        
+        if (longTermMemories.length > 0) {
+          userContext += `\n**What Hope remembers about you:**\n`;
+          longTermMemories.forEach(mem => {
+            userContext += `- ${mem.content.substring(0, 100)}${mem.content.length > 100 ? '...' : ''}\n`;
+          });
+        }
+        
+        // Build conversation history (only recent turns)
+        const conversationHistory = shortTermMemory.messages
+          .map(msg => `${msg.role}: ${msg.content}`)
+          .join('\n');
+        
+        logger.info(`📊 Context size: ${longTermMemories.length} long-term memories, ${shortTermMemory.messages.length} recent messages`);
         
         // Build the mood-adaptive Hope prompt with emotional intelligence
         const enhancedPrompt = buildHopePrompt(currentUserMood, conversationHistory + `\n\nUser: ${message}`, userContext);
