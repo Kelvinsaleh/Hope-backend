@@ -386,6 +386,32 @@ export const getAllChatSessions = async (req: Request, res: Response) => {
       createdAt: { $lt: oneHourAgo }
     }).catch(err => logger.warn("Failed to cleanup empty sessions:", err));
 
+    // Generate titles for sessions without them (background task)
+    const sessionsNeedingTitles = sessionsWithMessages.filter(
+      session => !session.title && session.messages.length >= 3
+    );
+
+    if (sessionsNeedingTitles.length > 0) {
+      // Generate titles in background (don't await - don't block response)
+      Promise.all(
+        sessionsNeedingTitles.slice(0, 5).map(async (session) => { // Limit to 5 at a time
+          try {
+            const title = await generateChatTitle(session.messages.map(m => ({
+              role: m.role,
+              content: m.content
+            })));
+            await ChatSession.updateOne(
+              { _id: session._id },
+              { $set: { title } }
+            );
+            logger.info(`Generated title for existing session ${session.sessionId}: "${title}"`);
+          } catch (error) {
+            logger.warn(`Failed to generate title for session ${session.sessionId}:`, error);
+          }
+        })
+      ).catch(err => logger.error("Background title generation failed:", err));
+    }
+
     res.json({
       success: true,
       sessions: sessionsWithMessages.map(session => ({
