@@ -109,7 +109,7 @@ export const sendMessage = async (req: Request, res: Response) => {
     session.messages.push(userMessage);
 
     // Generate AI response using Gemini with enhanced memory
-    let aiResponse = "I'm here to support you. What's on your mind today?";
+    let aiResponse = "Tell me what's happening. I'm listening.";
     
     try {
       const { GoogleGenerativeAI } = await import('@google/generative-ai');
@@ -121,17 +121,23 @@ export const sendMessage = async (req: Request, res: Response) => {
       
       logger.info("Initializing Gemini AI with key:", process.env.GEMINI_API_KEY.substring(0, 10) + "...");
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      const model = genAI.getGenerativeModel({ 
+        model: "gemini-2.5-flash",
+        generationConfig: {
+          maxOutputTokens: 150, // 3-5 thoughtful sentences
+          temperature: 0.8,
+        },
+      });
       
       logger.info("Gemini model initialized successfully");
         
-        // Get conversation history (last 10 messages for context)
+        // Get conversation history (last 12 messages for better context)
         const conversationHistory = session.messages
-          .slice(-10)
+          .slice(-12)
           .map(msg => `${msg.role}: ${msg.content}`)
           .join('\n');
         
-        // Fetch user's context for better memory
+        // Fetch user's context for better memory and therapeutic insight
         let userContext = "";
         let currentUserMood = "neutral";
         
@@ -140,26 +146,86 @@ export const sendMessage = async (req: Request, res: Response) => {
           const { Mood } = await import('../models/Mood');
           const latestMood = await Mood.findOne({ userId })
             .sort({ timestamp: -1 })
-            .select('score');
+            .select('score timestamp');
           
           if (latestMood) {
             currentUserMood = normalizeMood(latestMood.score || 5);
-            userContext += `\n**Current Mood:** ${currentUserMood} (${latestMood.score || 'N/A'}/10)\n`;
+            userContext += `\n**Current Mood:** ${currentUserMood} (${latestMood.score}/10)\n`;
           }
 
-          // Get recent journal entries
+          // Get mood patterns (last 7 days) to understand emotional trajectory
+          const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+          const recentMoods = await Mood.find({ 
+            userId,
+            timestamp: { $gte: weekAgo }
+          })
+            .sort({ timestamp: -1 })
+            .limit(10)
+            .select('score timestamp');
+          
+          if (recentMoods.length > 1) {
+            const avgMood = recentMoods.reduce((sum, m) => sum + (m.score || 5), 0) / recentMoods.length;
+            const moodTrend = recentMoods[0].score > avgMood ? 'improving' : recentMoods[0].score < avgMood ? 'declining' : 'stable';
+            userContext += `**Mood Pattern:** ${moodTrend} (avg ${avgMood.toFixed(1)}/10 past week)\n`;
+          }
+
+          // Get recent journal entries for emotional themes
           const { JournalEntry } = await import('../models/JournalEntry');
           const recentJournals = await JournalEntry.find({ userId })
             .sort({ createdAt: -1 })
-            .limit(3)
+            .limit(5)
             .select('content mood tags createdAt');
           
           if (recentJournals.length > 0) {
-            userContext += "\n**Recent Journal Topics:**\n";
-            recentJournals.forEach(journal => {
-              const topics = journal.tags?.slice(0, 2).join(', ') || 'general';
-              userContext += `- ${topics}\n`;
+            // Extract recurring themes from tags
+            const allTags = recentJournals.flatMap(j => j.tags || []);
+            const tagCounts: Record<string, number> = {};
+            allTags.forEach(tag => {
+              tagCounts[tag] = (tagCounts[tag] || 0) + 1;
             });
+            const topThemes = Object.entries(tagCounts)
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 4)
+              .map(([tag]) => tag);
+            
+            if (topThemes.length > 0) {
+              userContext += `**Recurring Themes:** ${topThemes.join(', ')}\n`;
+            }
+            
+            // Add brief journal context
+            userContext += `**Recent Journal Entries:** ${recentJournals.length} entries in recent days\n`;
+          }
+
+          // Get previous chat sessions summary for continuity
+          const previousSessions = await ChatSession.find({ 
+            userId,
+            sessionId: { $ne: sessionId },
+            messages: { $exists: true, $ne: [] }
+          })
+            .sort({ startTime: -1 })
+            .limit(2)
+            .select('messages startTime');
+          
+          if (previousSessions.length > 0) {
+            userContext += `**Session History:** ${previousSessions.length} recent sessions\n`;
+            
+            // Extract key topics from previous sessions
+            const topics = new Set<string>();
+            previousSessions.forEach(sess => {
+              sess.messages.filter(m => m.role === 'user').slice(-3).forEach(msg => {
+                const content = msg.content.toLowerCase();
+                if (content.includes('work') || content.includes('job')) topics.add('work stress');
+                if (content.includes('relationship') || content.includes('partner')) topics.add('relationships');
+                if (content.includes('family')) topics.add('family');
+                if (content.includes('anxious') || content.includes('anxiety')) topics.add('anxiety');
+                if (content.includes('sleep')) topics.add('sleep issues');
+                if (content.includes('goal') || content.includes('want to')) topics.add('personal goals');
+              });
+            });
+            
+            if (topics.size > 0) {
+              userContext += `**Past Discussion Topics:** ${Array.from(topics).slice(0, 3).join(', ')}\n`;
+            }
           }
         } catch (contextError) {
           logger.warn("Could not fetch user context:", contextError);

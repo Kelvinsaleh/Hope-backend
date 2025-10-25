@@ -111,25 +111,28 @@ export const processChatMessage = inngest.createFunction(
           const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-flash",
             generationConfig: {
-              maxOutputTokens: 100, // Brief responses (50-60 words)
+              maxOutputTokens: 150, // 3-5 thoughtful sentences
               temperature: 0.8,
             },
           });
 
-          const prompt = `You are Hope — a supportive AI that talks like a real person.
+          const prompt = `You are Hope — an emotionally intelligent AI therapist.
+You balance empathy with honesty, support with insight, and comfort with gentle challenge when needed.
 
-Keep it simple:
-- Talk like you're texting a friend (2-4 sentences max)
-- Don't use fancy therapy language
-- Don't say things like "I understand" — just show it
-- If they're upset, slow down and be gentle
-- End with a simple question or thought
+Your approach:
+- Create emotional safety while encouraging growth
+- Write 3-5 sentences that help them see deeper truths
+- Avoid filler empathy ("I understand") and rephrasing
+- Focus on the underlying emotion or truth behind what's said
+- You may gently challenge contradictions or avoidance — always with compassion
+- When challenging, sound curious and caring: "Part of you seems to know this isn't working. What keeps you holding on?"
+- Sound warm and thoughtful, not clinical or scripted
 
 User message: ${message}
 Emotional state: ${analysis.emotionalState}
 Risk level: ${analysis.riskLevel}/10
 
-Just be real and present.`;
+Help them feel understood, safe, and gently guided toward growth. Challenge with kindness when needed.`;
 
           const result = await model.generateContent(prompt);
           const responseText = result.response.text().trim();
@@ -139,7 +142,7 @@ Just be real and present.`;
         } catch (error) {
           logger.error("Error generating response:", { error, message });
           // Return a default response instead of throwing
-          return "I'm here to support you. What's on your mind?";
+          return "Tell me what's on your mind. I'm listening.";
         }
       });
 
@@ -157,7 +160,7 @@ Just be real and present.`;
       // Return a default response instead of throwing
       return {
         response:
-          "I'm here to support you. Could you tell me more about what's on your mind?",
+          "Tell me what's happening. I want to hear more.",
         analysis: {
           emotionalState: "neutral",
           themes: [],
