@@ -122,11 +122,7 @@ export const sendMessage = async (req: Request, res: Response) => {
       logger.info("Initializing Gemini AI with key:", process.env.GEMINI_API_KEY.substring(0, 10) + "...");
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
       const model = genAI.getGenerativeModel({ 
-        model: "gemini-2.5-flash",
-        generationConfig: {
-          maxOutputTokens: 150, // 3-5 thoughtful sentences
-          temperature: 0.8,
-        },
+        model: "gemini-2.5-flash"
       });
       
       logger.info("Gemini model initialized successfully");
@@ -235,9 +231,19 @@ export const sendMessage = async (req: Request, res: Response) => {
         const enhancedPrompt = buildHopePrompt(currentUserMood, conversationHistory + `\n\nUser: ${message}`, userContext);
 
         logger.info("Sending request to Gemini AI...");
-        const result = await model.generateContent(enhancedPrompt);
+        logger.info(`Prompt length: ${enhancedPrompt.length} characters`);
+        const result = await model.generateContent({
+          contents: [{ role: "user", parts: [{ text: enhancedPrompt }] }],
+          generationConfig: {
+            maxOutputTokens: 200,
+            temperature: 0.8,
+            topP: 0.95,
+          },
+        });
         const response = await result.response;
         const generatedText = response.text()?.trim();
+        
+        logger.info(`Raw AI response length: ${generatedText?.length || 0}`);
         
         // Validate response is not empty
         if (generatedText && generatedText.length > 0) {
@@ -245,6 +251,7 @@ export const sendMessage = async (req: Request, res: Response) => {
           logger.info(`AI response generated for session ${sessionId} with enhanced memory context`);
         } else {
           logger.warn("AI returned empty response, using fallback");
+          logger.warn(`Response object: ${JSON.stringify(response)}`);
         }
     } catch (aiError: any) {
       logger.error("AI response generation failed:", {
