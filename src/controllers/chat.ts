@@ -430,3 +430,37 @@ export const completeChatSession = async (req: Request, res: Response) => {
     });
   }
 };
+
+// Delete a chat session
+export const deleteChatSession = async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const userId = new Types.ObjectId(req.user._id);
+
+    const session = await ChatSession.findOneAndDelete({
+      sessionId,
+      userId
+    });
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: "Chat session not found"
+      });
+    }
+
+    logger.info(`Chat session deleted: ${sessionId} for user: ${userId}`);
+
+    res.json({
+      success: true,
+      message: "Chat session deleted successfully"
+    });
+  } catch (error) {
+    logger.error("Delete chat session error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete chat session",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};

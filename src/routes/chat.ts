@@ -6,6 +6,7 @@ import {
   getChatHistory,
   getAllChatSessions,
   completeChatSession,
+  deleteChatSession,
 } from "../controllers/chat";
 import { auth } from "../middleware/auth";
 import { enforceChatDailyLimit } from "../middleware/premiumLimits";
@@ -32,6 +33,9 @@ router.get("/sessions/:sessionId/history", getChatHistory);
 
 // Complete a chat session
 router.post("/sessions/:sessionId/complete", completeChatSession);
+
+// Delete a chat session
+router.delete("/sessions/:sessionId", deleteChatSession);
 
 export default router;
 
