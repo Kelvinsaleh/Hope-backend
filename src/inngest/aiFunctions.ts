@@ -109,11 +109,7 @@ export const processChatMessage = inngest.createFunction(
       const response = await step.run("generate-response", async () => {
         try {
           const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.5-flash",
-            generationConfig: {
-              maxOutputTokens: 150, // 3-5 thoughtful sentences
-              temperature: 0.8,
-            },
+            model: "gemini-2.5-flash"
           });
 
           const prompt = `You are Hope — an emotionally intelligent AI therapist.
@@ -134,7 +130,13 @@ Risk level: ${analysis.riskLevel}/10
 
 Help them feel understood, safe, and gently guided toward growth. Challenge with kindness when needed.`;
 
-          const result = await model.generateContent(prompt);
+          const result = await model.generateContent({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.8,
+              topP: 0.95,
+            },
+          });
           const responseText = result.response.text()?.trim() || '';
 
           // Validate response is not empty

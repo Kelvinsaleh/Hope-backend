@@ -146,16 +146,18 @@ async function generateAIResponseWithRetry(
     try {
       logger.info(`Attempting AI generation (attempt ${attempt + 1}/${retries + 1})`);
       const model = genAI.getGenerativeModel({ 
-        model: "gemini-2.5-flash",
-        generationConfig: {
-          maxOutputTokens: 150, // 3-5 thoughtful sentences
-          temperature: 0.8, // More human-like variability
-        },
+        model: "gemini-2.5-flash"
       });
       const controller = new AbortController();
       const id = setTimeout(() => controller.abort(), 30000);
       
-      const result = await model.generateContent(aiContext as any);
+      const result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: aiContext }] }],
+        generationConfig: {
+          temperature: 0.8,
+          topP: 0.95,
+        },
+      });
       const response = await result.response;
       const responseText = response.text()?.trim() || '';
       clearTimeout(id);

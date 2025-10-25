@@ -235,7 +235,6 @@ export const sendMessage = async (req: Request, res: Response) => {
         const result = await model.generateContent({
           contents: [{ role: "user", parts: [{ text: enhancedPrompt }] }],
           generationConfig: {
-            maxOutputTokens: 200,
             temperature: 0.8,
             topP: 0.95,
           },
