@@ -268,7 +268,23 @@ export const generateAICBTInsights = async (req: Request, res: Response) => {
 
     let prompt = "";
     
-    if (type === 'thought_analysis') {
+    if (type === 'journal_insights') {
+      // Journal entry insights - return simple array of insights
+      prompt = `Analyze this journal entry and provide 3-5 brief, supportive insights as a mental health companion.
+
+Journal: "${text}"
+Mood: ${mood || 'Not specified'}/6
+
+Respond with a JSON array of 3-5 short insights (1-2 sentences each). Focus on:
+- Recognizing emotional patterns
+- Offering gentle encouragement
+- Suggesting helpful coping strategies
+- Acknowledging their feelings
+
+Format: ["insight 1", "insight 2", "insight 3"]
+
+Only return the JSON array, nothing else.`;
+    } else if (type === 'thought_analysis') {
       prompt = `You are a CBT (Cognitive Behavioral Therapy) expert. Analyze the following thought and provide insights:
 
 Thought: "${text}"
@@ -319,6 +335,15 @@ Format your response as valid JSON only.`;
     let insights;
     try {
       insights = JSON.parse(aiText);
+      
+      // For journal_insights, ensure we return the array in the expected format
+      if (type === 'journal_insights' && Array.isArray(insights)) {
+        return res.json({
+          success: true,
+          insights: insights,
+          source: 'backend'
+        });
+      }
     } catch (parseError) {
       // If JSON parsing fails, create a fallback response
       console.error("Failed to parse AI response:", parseError);
