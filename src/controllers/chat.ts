@@ -3,6 +3,7 @@ import { ChatSession, IChatMessage } from "../models/ChatSession";
 import { Types } from "mongoose";
 import { logger } from "../utils/logger";
 import { buildHopePrompt, normalizeMood } from "../utils/hopePersonality";
+import { generateChatTitle, shouldGenerateTitle } from "../utils/chatTitleGenerator";
 
 export const createChatSession = async (req: Request, res: Response) => {
   try {
@@ -65,6 +66,7 @@ export const getChatSession = async (req: Request, res: Response) => {
       session: {
         id: session.sessionId,
         userId: session.userId.toString(),
+        title: session.title,
         status: session.status,
         startTime: session.startTime,
         messages: session.messages
@@ -276,6 +278,23 @@ export const sendMessage = async (req: Request, res: Response) => {
     };
 
     session.messages.push(assistantMessage);
+    
+    // Generate title after a few messages if not already set
+    if (shouldGenerateTitle(session.messages.length, session.title)) {
+      try {
+        logger.info(`Generating title for session ${sessionId} with ${session.messages.length} messages`);
+        const title = await generateChatTitle(session.messages.map(m => ({ 
+          role: m.role, 
+          content: m.content 
+        })));
+        session.title = title;
+        logger.info(`Generated title: "${title}" for session ${sessionId}`);
+      } catch (titleError) {
+        logger.warn(`Failed to generate title for session ${sessionId}:`, titleError);
+        // Continue without title - not critical
+      }
+    }
+    
     await session.save();
 
     logger.info(`Message and AI response added to session: ${sessionId}`);
@@ -284,6 +303,8 @@ export const sendMessage = async (req: Request, res: Response) => {
       success: true,
       message: "Message sent",
       response: aiResponse,
+      title: session.title, // Include generated title
+
       analysis: {
         emotionalState: "neutral",
         riskLevel: 0,
@@ -370,6 +391,7 @@ export const getAllChatSessions = async (req: Request, res: Response) => {
       sessions: sessionsWithMessages.map(session => ({
         id: session.sessionId,
         userId: session.userId.toString(),
+        title: session.title || null,
         status: session.status,
         startTime: session.startTime,
         messageCount: session.messages.length,
