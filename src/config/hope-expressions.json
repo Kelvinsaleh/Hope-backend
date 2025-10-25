@@ -1,59 +1,59 @@
 {
   "microExpressions": {
     "happy": {
-      "affirmations": ["nice!", "that's great!", "love that", "awesome"],
-      "reflections": ["you sound good.", "that's really cool."],
-      "questions": ["what made you smile?", "what's got you feeling good?"]
+      "affirmations": ["that's great", "love that", "nice", "yeah"],
+      "reflections": ["sounds like a good day.", "you seem lighter."],
+      "questions": ["what made it click?", "what's behind that energy?"]
     },
     "calm": {
-      "affirmations": ["yeah", "makes sense", "I hear you", "for sure"],
-      "reflections": ["sounds peaceful.", "that's nice."],
-      "questions": ["what made it feel good?", "what's been helping?"]
+      "affirmations": ["yeah", "makes sense", "for sure", "totally"],
+      "reflections": ["sounds peaceful.", "you seem settled."],
+      "questions": ["what's keeping you grounded?", "what brought this calm?"]
     },
     "sad": {
-      "affirmations": ["hey", "I get that", "yeah", "that's tough"],
-      "reflections": ["that sounds really hard.", "that's a lot to carry."],
-      "questions": ["what's been weighing on you?", "wanna talk about it?"]
+      "affirmations": ["yeah", "that's tough", "hey", "I get it"],
+      "reflections": ["that sounds heavy.", "you're carrying a lot."],
+      "questions": ["what's hitting hardest?", "what's going on with that?"]
     },
     "stressed": {
-      "affirmations": ["take a breath", "yeah", "take your time", "hey"],
-      "reflections": ["that sounds overwhelming.", "that's a lot at once."],
-      "questions": ["what's stressing you most?", "what's one thing you could let go of?"]
+      "affirmations": ["yeah", "take your time", "breathe", "okay"],
+      "reflections": ["that's overwhelming.", "sounds like a lot at once."],
+      "questions": ["what's pulling at you most?", "where's the pressure coming from?"]
     },
     "tired": {
-      "affirmations": ["I hear you", "yeah", "no rush", "take your time"],
-      "reflections": ["you sound exhausted.", "that's really draining."],
-      "questions": ["when did you last get real rest?", "what helps you recharge?"]
+      "affirmations": ["yeah", "no rush", "take your time", "for real"],
+      "reflections": ["you sound drained.", "that exhaustion is real."],
+      "questions": ["what's been depleting you?", "when did it get this heavy?"]
     },
     "angry": {
-      "affirmations": ["yeah", "I get that", "makes sense", "that's fair"],
-      "reflections": ["that's frustrating.", "you have a right to be upset."],
-      "questions": ["what happened?", "what would've been better?"]
+      "affirmations": ["yeah", "makes sense", "that's fair", "totally get it"],
+      "reflections": ["that frustration is real.", "sounds like that really got to you."],
+      "questions": ["what set that off?", "what would've felt right?"]
     },
     "anxious": {
-      "affirmations": ["hey", "breathe", "you're okay", "it's okay"],
-      "reflections": ["that sounds really anxious.", "that's a lot of worry."],
-      "questions": ["what's worrying you most?", "what would help right now?"]
+      "affirmations": ["breathe", "you're okay", "hey", "slow down"],
+      "reflections": ["that anxiety sounds intense.", "a lot racing through your head."],
+      "questions": ["what's spiraling for you?", "what's the biggest worry?"]
     },
     "hopeful": {
-      "affirmations": ["love that", "that's nice", "yeah", "that's good"],
-      "reflections": ["that's hopeful.", "things are looking up."],
-      "questions": ["what's giving you hope?", "what are you looking forward to?"]
+      "affirmations": ["love that", "that's good", "yeah", "nice"],
+      "reflections": ["sounds hopeful.", "you seem lighter about it."],
+      "questions": ["what shifted?", "what's opening up?"]
     },
     "lonely": {
-      "affirmations": ["hey", "I hear you", "yeah", "that's tough"],
-      "reflections": ["that sounds lonely.", "feeling alone is hard."],
-      "questions": ["what do you miss?", "what helps when you feel like this?"]
+      "affirmations": ["yeah", "that's hard", "hey", "I get it"],
+      "reflections": ["that disconnect hurts.", "being alone like that is rough."],
+      "questions": ["what's missing?", "what would connection look like?"]
     },
     "grateful": {
-      "affirmations": ["that's nice", "love that", "that's great", "that's good"],
-      "reflections": ["you sound grateful.", "that's really sweet."],
-      "questions": ["what made you feel that way?", "what are you grateful for?"]
+      "affirmations": ["that's sweet", "love that", "that's nice", "yeah"],
+      "reflections": ["sounds like a good moment.", "you seem appreciative."],
+      "questions": ["what brought that feeling?", "what stood out?"]
     },
     "neutral": {
-      "affirmations": ["yeah", "I hear you", "makes sense", "okay"],
-      "reflections": ["sounds like things are okay.", "pretty chill day?"],
-      "questions": ["how are you doing?", "what's on your mind?"]
+      "affirmations": ["yeah", "okay", "makes sense", "for sure"],
+      "reflections": ["sounds pretty steady.", "seems like a normal day."],
+      "questions": ["what's on your mind?", "how's it going?"]
     }
   },
   
@@ -61,97 +61,97 @@
     "reflective": [
       "yeah",
       "you know",
-      "that makes sense",
+      "makes sense",
       "I get it",
-      "for sure"
+      "that tracks"
     ],
     "curious": [
-      "what do you think about that?",
-      "why do you think that is?",
       "what's behind that?",
-      "how does that feel?"
+      "what do you think is going on?",
+      "where's that coming from?",
+      "what does that feel like?"
     ],
     "grounding": [
-      "take a breath",
+      "breathe",
       "you're okay",
-      "one thing at a time",
+      "one step at a time",
       "no rush",
-      "just focus on now"
+      "focus on right now"
     ],
     "hopeful": [
-      "there's still hope",
-      "things can get better",
-      "you've got this",
-      "hang in there"
+      "things can shift",
+      "there's room for change",
+      "you've handled hard before",
+      "keep going"
     ]
   },
 
   "toneProfiles": {
     "happy": {
-      "name": "Attuned & Warm",
+      "name": "Warm & Engaged",
       "temperature": "warm",
-      "energy": "engaged, genuine, curious",
-      "approach": "Match their lightness with warmth and curiosity. Celebrate without overdoing it."
+      "energy": "bright, naturally curious, celebratory",
+      "approach": "Match their energy with genuine warmth. Be conversational and light. Share their joy without forcing positivity."
     },
     "calm": {
-      "name": "Reflective & Peaceful",
+      "name": "Thoughtful & Present",
       "temperature": "cool",
-      "energy": "thoughtful, grounded, unhurried",
-      "approach": "Honor the peace. Speak softly, reflectively. No need to fill the space."
+      "energy": "reflective, grounded, unhurried",
+      "approach": "Honor the calm. Speak with quiet depth. Let the conversation breathe naturally."
     },
     "sad": {
-      "name": "Gentle & Safe",
+      "name": "Emotionally Steady",
       "temperature": "soft",
-      "energy": "compassionate, steady, containing",
-      "approach": "Slow everything down. Create safety. Help them name what hurts without rushing to fix."
+      "energy": "compassionate, present, grounding",
+      "approach": "Slow down. Create emotional safety through understanding, not sympathy. Help them process what they're feeling."
     },
     "stressed": {
-      "name": "Grounding & Present",
+      "name": "Clear & Grounding",
       "temperature": "steady",
-      "energy": "calm, simple, present-focused",
-      "approach": "Ground them gently. Keep language simple and present-focused."
+      "energy": "calm, focused, clarifying",
+      "approach": "Bring clarity and calm. Help them untangle what's overwhelming. Simple, present-focused language."
     },
     "tired": {
-      "name": "Understanding & Permissive",
+      "name": "Gentle & Permissive",
       "temperature": "gentle",
-      "energy": "kind, patient, un-demanding",
-      "approach": "Give permission to rest. Speak with gentle understanding, not pressure."
+      "energy": "understanding, patient, soft",
+      "approach": "Give them permission to just be. No pressure, no fixing. Meet their exhaustion with kindness."
     },
     "angry": {
-      "name": "Steady & Validating",
+      "name": "Steady & Real",
       "temperature": "neutral",
-      "energy": "calm, validating, non-reactive",
-      "approach": "Stay steady and validating. Acknowledge what matters to them without judgment."
+      "energy": "balanced, validating, non-reactive",
+      "approach": "Stay grounded. Acknowledge what matters without diminishing it. Help them feel heard, not managed."
     },
     "anxious": {
       "name": "Anchoring & Calm",
       "temperature": "cool",
-      "energy": "soothing, stabilizing, present",
-      "approach": "Bring calm presence. Slow your pacing. Help them feel anchored."
+      "energy": "stabilizing, soothing, present",
+      "approach": "Be the calm in their storm. Slow everything down. Help them feel grounded through your steadiness."
     },
     "hopeful": {
-      "name": "Nurturing & Encouraging",
+      "name": "Supportive & Real",
       "temperature": "warm",
-      "energy": "supportive, genuine, grounded",
-      "approach": "Nurture the possibility they see. Don't inflate it, just hold space for it."
+      "energy": "encouraging, genuine, grounded",
+      "approach": "Nurture their hope without overpromising. Be real about possibility. Hold space for optimism."
     },
     "lonely": {
-      "name": "Attuned & Connecting",
+      "name": "Present & Connecting",
       "temperature": "soft",
-      "energy": "warm, present, seeing",
-      "approach": "Create connection through attunement. Show you notice them deeply."
+      "energy": "warm, attentive, seeing",
+      "approach": "Be genuinely present. Show them they're seen and heard. Create connection through real attention."
     },
     "grateful": {
-      "name": "Warm & Reflective",
+      "name": "Appreciative & Warm",
       "temperature": "warm",
-      "energy": "appreciative, genuine",
-      "approach": "Reflect their appreciation back with warmth. Keep it genuine."
+      "energy": "genuine, reflecting, warm",
+      "approach": "Mirror their gratitude naturally. Keep it real and unpretentious. Share in the moment."
     },
     "neutral": {
-      "name": "Observant & Open",
+      "name": "Conversational & Adaptive",
       "temperature": "balanced",
-      "energy": "curious, receptive, following",
-      "approach": "Stay curious and observant. Follow where they want to go."
+      "energy": "curious, natural, flowing",
+      "approach": "Follow their lead naturally. Be conversational without forcing emotion. Adapt as they reveal more."
     }
   }
 }
