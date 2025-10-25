@@ -236,7 +236,7 @@ function getMoodGuidance(mood: string): string {
     'tired': 'Give permission to rest. Be patient and understanding.',
     'angry': 'Stay steady. Validate without judgment.',
     'anxious': 'Bring calm presence. Help them feel anchored.',
-    'lonely': 'Create connection. Show you're present and listening.',
+    'lonely': 'Create connection. Show you are present and listening.',
     'grateful': 'Reflect their appreciation warmly.',
     'hopeful': 'Nurture that spark gently.',
     'neutral': 'Stay curious and open. Follow where they want to go.'
