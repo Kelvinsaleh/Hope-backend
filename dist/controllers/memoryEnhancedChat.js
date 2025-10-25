@@ -9,6 +9,7 @@ const Meditation_1 = require("../models/Meditation");
 const User_1 = require("../models/User");
 const logger_1 = require("../utils/logger");
 const mongoose_1 = require("mongoose");
+const hopePersonality_1 = require("../utils/hopePersonality");
 // Initialize Gemini API - Use environment variable or warn
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 if (!GEMINI_API_KEY) {
@@ -355,33 +356,27 @@ async function gatherUserMemory(userId) {
     }
 }
 function createAIContext(message, memoryData, user, additionalContext) {
-    const basePrompt = `You are Hope, a warm, compassionate AI that chats with ${user.name || 'someone'} about their thoughts, moods, and wellbeing.
-
-**STYLE RULES (CRITICAL - FOLLOW EXACTLY):**
-- Speak briefly — 2-4 sentences per reply max (50-60 words)
-- Use a calm, conversational tone
-- Be supportive but don't lecture or over-explain
-- Avoid repeating the user's words too much
-- End with a short, open question or reflection to keep the chat going naturally
-- Don't use long lists unless the user explicitly asks
-- Never say "As an AI…" or anything formal
-- Show empathy through your words, don't announce it
-
-**TONE EXAMPLES:**
-User: "I feel tired lately." → You: "That sounds rough. Do you know what's been draining your energy most?"
-User: "I had a bad day." → You: "I'm sorry to hear that. Want to tell me what made it tough today?"
-User: "I can't focus on studying." → You: "That happens sometimes. Do you think stress or distractions are part of it?"
-
-**What you know about ${user.name || 'this person'}:**
-- ${memoryData.journalEntries.length} journal entries recently
-- ${memoryData.moodPatterns.length} mood records (recent mood: ${memoryData.moodPatterns[0]?.mood || 'unknown'}/10)
-- ${memoryData.meditationHistory.length} meditation sessions completed
-- ${memoryData.therapySessions.length} previous therapy chats
-
-User message: "${message}"
-
-Respond in 2-4 sentences max. Keep it clear, emotionally aware, and conversational. Focus on empathy, not detail.`;
-    return basePrompt;
+    // Determine current mood from most recent mood data
+    const currentMood = memoryData.moodPatterns.length > 0
+        ? (0, hopePersonality_1.normalizeMood)(memoryData.moodPatterns[0].mood)
+        : 'neutral';
+    // Build user context string
+    let userContext = `\n**What you know about ${user.name || 'this person'}:**\n`;
+    userContext += `- ${memoryData.journalEntries.length} journal entries recently\n`;
+    userContext += `- ${memoryData.moodPatterns.length} mood records (recent mood: ${memoryData.moodPatterns[0]?.mood || 'unknown'}/10)\n`;
+    userContext += `- ${memoryData.meditationHistory.length} meditation sessions completed\n`;
+    userContext += `- ${memoryData.therapySessions.length} previous therapy chats\n`;
+    // Add recent journal insights if available
+    if (memoryData.journalEntries.length > 0) {
+        userContext += `\n**Recent journal themes:** ${memoryData.insights.slice(0, 3).join(', ') || 'general reflection'}\n`;
+    }
+    // Build conversation history from memory
+    const conversationHistory = memoryData.therapySessions
+        .slice(-3)
+        .map(session => `Previous session: [${session.date}]`)
+        .join('\n');
+    // Use the mood-adaptive Hope prompt builder
+    return (0, hopePersonality_1.buildHopePrompt)(currentMood, conversationHistory + `\n\nUser: ${message}`, userContext);
 }
 async function generatePersonalizedSuggestions(memoryData, userMessage, aiResponse) {
     const suggestions = [];

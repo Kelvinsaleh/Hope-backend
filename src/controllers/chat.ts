@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { ChatSession, IChatMessage } from "../models/ChatSession";
 import { Types } from "mongoose";
 import { logger } from "../utils/logger";
+import { buildHopePrompt, normalizeMood } from "../utils/hopePersonality";
 
 export const createChatSession = async (req: Request, res: Response) => {
   try {
@@ -131,7 +132,20 @@ export const sendMessage = async (req: Request, res: Response) => {
         
         // Fetch user's long-term context for better memory
         let userContext = "";
+        let currentUserMood = "neutral";
+        
         try {
+          // Get current mood from most recent mood entry
+          const { Mood } = await import('../models/Mood');
+          const latestMood = await Mood.findOne({ userId })
+            .sort({ timestamp: -1 })
+            .select('score');
+          
+          if (latestMood) {
+            currentUserMood = normalizeMood(latestMood.score || 5);
+            userContext += `\n**Current Mood:** ${currentUserMood} (${latestMood.score || 'N/A'}/10)\n`;
+          }
+
           // Get recent journal entries
           const { JournalEntry } = await import('../models/JournalEntry');
           const recentJournals = await JournalEntry.find({ userId })
@@ -140,22 +154,21 @@ export const sendMessage = async (req: Request, res: Response) => {
             .select('content mood tags createdAt');
           
           if (recentJournals.length > 0) {
-            userContext += "\n\n**Recent Journal Entries:**\n";
+            userContext += "\n**Recent Journal Entries:**\n";
             recentJournals.forEach(journal => {
               userContext += `- [${new Date(journal.createdAt).toLocaleDateString()}] Mood: ${journal.mood}, Topics: ${journal.tags?.join(', ') || 'none'}\n`;
             });
           }
 
           // Get recent mood patterns
-          const { Mood } = await import('../models/Mood');
           const recentMoods = await Mood.find({ userId })
             .sort({ timestamp: -1 })
             .limit(7)
             .select('score timestamp');
           
           if (recentMoods.length > 0) {
-            const avgMood = recentMoods.reduce((sum, m) => sum + (m.score || 50), 0) / recentMoods.length;
-            userContext += `\n**Recent Mood Pattern:** Average mood ${avgMood.toFixed(1)}/100 over past week\n`;
+            const avgMood = recentMoods.reduce((sum, m) => sum + (m.score || 5), 0) / recentMoods.length;
+            userContext += `\n**Recent Mood Pattern:** Average ${avgMood.toFixed(1)}/10 over past week\n`;
           }
 
           // Get summary of previous sessions
@@ -191,36 +204,8 @@ export const sendMessage = async (req: Request, res: Response) => {
           logger.warn("Could not fetch user context:", contextError);
         }
         
-        const enhancedPrompt = `You are Hope, a warm, compassionate AI that chats with users about their thoughts, moods, and wellbeing.
-
-**STYLE RULES (CRITICAL - FOLLOW EXACTLY):**
-- Speak briefly — 2-4 sentences per reply max (50-60 words)
-- Use a calm, conversational tone
-- Be supportive but don't lecture or over-explain
-- Avoid repeating the user's words too much
-- End with a short, open question or reflection to keep the chat going naturally
-- Don't use long lists unless the user explicitly asks
-- Never say "As an AI…" or anything formal
-- Show empathy through your words, don't announce it
-
-**TONE EXAMPLES TO LEARN FROM:**
-User: "I feel tired lately."
-You: "That sounds rough. Do you know what's been draining your energy most?"
-
-User: "I had a bad day."
-You: "I'm sorry to hear that. Want to tell me what made it tough today?"
-
-User: "I can't focus on studying."
-You: "That happens sometimes. Do you think stress or distractions are part of it?"
-
-**User Context:**${userContext || "\n(First conversation - getting to know each other)"}
-
-**Recent messages:**
-${conversationHistory}
-
-User: ${message}
-
-Respond in 2-4 sentences max. Keep it clear, emotionally aware, and conversational. Focus on empathy, not detail.`;
+        // Build the mood-adaptive Hope prompt with emotional intelligence
+        const enhancedPrompt = buildHopePrompt(currentUserMood, conversationHistory + `\n\nUser: ${message}`, userContext);
 
         logger.info("Sending request to Gemini AI...");
         // Note: Gemini API doesn't support generationConfig in getGenerativeModel for older models
@@ -317,13 +302,29 @@ export const getAllChatSessions = async (req: Request, res: Response) => {
   try {
     const userId = new Types.ObjectId(req.user._id);
 
-    const sessions = await ChatSession.find({ 
+    // Fetch all sessions
+    const allSessions = await ChatSession.find({ 
       userId 
     }).sort({ startTime: -1 });
 
+    // Filter out empty sessions (sessions with no messages)
+    const sessionsWithMessages = allSessions.filter(session => 
+      session.messages && session.messages.length > 0
+    );
+
+    logger.info(`Found ${sessionsWithMessages.length} non-empty sessions (out of ${allSessions.length} total) for user: ${userId}`);
+
+    // Clean up old empty sessions (older than 1 hour) in the background
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    ChatSession.deleteMany({
+      userId,
+      messages: { $size: 0 },
+      createdAt: { $lt: oneHourAgo }
+    }).catch(err => logger.warn("Failed to cleanup empty sessions:", err));
+
     res.json({
       success: true,
-      sessions: sessions.map(session => ({
+      sessions: sessionsWithMessages.map(session => ({
         id: session.sessionId,
         userId: session.userId.toString(),
         status: session.status,
