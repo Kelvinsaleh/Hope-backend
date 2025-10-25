@@ -135,7 +135,13 @@ Risk level: ${analysis.riskLevel}/10
 Help them feel understood, safe, and gently guided toward growth. Challenge with kindness when needed.`;
 
           const result = await model.generateContent(prompt);
-          const responseText = result.response.text().trim();
+          const responseText = result.response.text()?.trim() || '';
+
+          // Validate response is not empty
+          if (responseText.length === 0) {
+            logger.warn("AI returned empty response, using fallback");
+            return "Tell me what's on your mind. I'm listening.";
+          }
 
           logger.info("Generated response:", { responseText });
           return responseText;

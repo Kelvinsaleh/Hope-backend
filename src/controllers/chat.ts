@@ -235,13 +235,17 @@ export const sendMessage = async (req: Request, res: Response) => {
         const enhancedPrompt = buildHopePrompt(currentUserMood, conversationHistory + `\n\nUser: ${message}`, userContext);
 
         logger.info("Sending request to Gemini AI...");
-        // Note: Gemini API doesn't support generationConfig in getGenerativeModel for older models
-        // Use gemini-2.5-flash which supports it, or apply config per-request
         const result = await model.generateContent(enhancedPrompt);
         const response = await result.response;
-        aiResponse = response.text();
+        const generatedText = response.text()?.trim();
         
-        logger.info(`AI response generated for session ${sessionId} with enhanced memory context`);
+        // Validate response is not empty
+        if (generatedText && generatedText.length > 0) {
+          aiResponse = generatedText;
+          logger.info(`AI response generated for session ${sessionId} with enhanced memory context`);
+        } else {
+          logger.warn("AI returned empty response, using fallback");
+        }
     } catch (aiError: any) {
       logger.error("AI response generation failed:", {
         error: aiError.message || aiError,
@@ -249,6 +253,12 @@ export const sendMessage = async (req: Request, res: Response) => {
         name: aiError.name
       });
       // Keep using fallback response
+    }
+
+    // Final validation: ensure response is never empty
+    if (!aiResponse || aiResponse.trim().length === 0) {
+      aiResponse = "Tell me what's happening. I'm listening.";
+      logger.warn(`Using fallback response for session ${sessionId} due to empty AI response`);
     }
 
     // Add AI response to session

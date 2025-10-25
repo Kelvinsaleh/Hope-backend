@@ -157,8 +157,13 @@ async function generateAIResponseWithRetry(
       
       const result = await model.generateContent(aiContext as any);
       const response = await result.response;
-      const responseText = response.text();
+      const responseText = response.text()?.trim() || '';
       clearTimeout(id);
+      
+      // Validate response is not empty
+      if (responseText.length === 0) {
+        throw new Error('AI returned empty response');
+      }
       
       logger.info(`AI generation successful on attempt ${attempt + 1}`);
       return responseText;
@@ -318,6 +323,13 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
       aiMessage = generateFallbackResponse(aiContext);
       isFailover = true;
       logger.info(`Using fallback response`);
+    }
+    
+    // Final validation: ensure response is never empty
+    if (!aiMessage || aiMessage.trim().length === 0) {
+      aiMessage = "Tell me what's happening. I'm listening.";
+      isFailover = true;
+      logger.warn(`Using final fallback due to empty AI response`);
     }
 
     // Save messages to session

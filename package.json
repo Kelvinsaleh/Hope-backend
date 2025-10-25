@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node dist/index.js",
     "dev": "nodemon src/index.ts",
-    "build": "tsc",
+    "build": "tsc && node -e \"require('fs').cpSync('src/config', 'dist/config', {recursive:true})\"",
     "keepalive": "node -e \"fetch(process.env.KEEPALIVE_URL||'http://localhost:8000/keepalive').then(()=>console.log('pinged')).catch(e=>console.error('keepalive failed',e))\"",
     "test": "jest"
   },
