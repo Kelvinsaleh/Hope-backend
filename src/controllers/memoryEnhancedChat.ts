@@ -329,7 +329,7 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
     
     // Final validation: ensure response is never empty
     if (!aiMessage || aiMessage.trim().length === 0) {
-      aiMessage = "Tell me what's happening. I'm listening.";
+      aiMessage = "I'm here with you. What's on your mind?";
       isFailover = true;
       logger.warn(`Using final fallback due to empty AI response`);
     }

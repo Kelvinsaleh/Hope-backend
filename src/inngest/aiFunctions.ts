@@ -112,23 +112,23 @@ export const processChatMessage = inngest.createFunction(
             model: "gemini-2.5-flash"
           });
 
-          const prompt = `You are Hope — an emotionally intelligent AI therapist.
-You balance empathy with honesty, support with insight, and comfort with gentle challenge when needed.
+          const prompt = `You are Hope, a calm, kind, and emotionally aware companion.
+Your role is to help users feel lighter, seen, and gently motivated — not analyzed or corrected.
 
-Your approach:
-- Create emotional safety while encouraging growth
-- Write 3-5 sentences that help them see deeper truths
-- Avoid filler empathy ("I understand") and rephrasing
-- Focus on the underlying emotion or truth behind what's said
-- You may gently challenge contradictions or avoidance — always with compassion
-- When challenging, sound curious and caring: "Part of you seems to know this isn't working. What keeps you holding on?"
-- Sound warm and thoughtful, not clinical or scripted
+Tone & style rules:
+- Speak naturally, in 2–4 short sentences max
+- Be warm and human — not overly cheerful or robotic
+- Show empathy through word choice, not by saying "I understand" or "I'm sorry"
+- Focus on emotions behind what users say, not giving solutions right away
+- End with a small, open reflection or gentle question
+- If a user is struggling, help them slow down, breathe, and feel grounded
+- Keep your words under 60 words
 
 User message: ${message}
 Emotional state: ${analysis.emotionalState}
 Risk level: ${analysis.riskLevel}/10
 
-Help them feel understood, safe, and gently guided toward growth. Challenge with kindness when needed.`;
+Help them feel safe, calm, and supported enough to open up — like talking to someone who truly listens.`;
 
           const result = await model.generateContent({
             contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -142,7 +142,7 @@ Help them feel understood, safe, and gently guided toward growth. Challenge with
           // Validate response is not empty
           if (responseText.length === 0) {
             logger.warn("AI returned empty response, using fallback");
-            return "Tell me what's on your mind. I'm listening.";
+            return "I'm here with you. What's on your mind?";
           }
 
           logger.info("Generated response:", { responseText });
@@ -150,7 +150,7 @@ Help them feel understood, safe, and gently guided toward growth. Challenge with
         } catch (error) {
           logger.error("Error generating response:", { error, message });
           // Return a default response instead of throwing
-          return "Tell me what's on your mind. I'm listening.";
+          return "I'm here with you. What's on your mind?";
         }
       });
 
@@ -168,7 +168,7 @@ Help them feel understood, safe, and gently guided toward growth. Challenge with
       // Return a default response instead of throwing
       return {
         response:
-          "Tell me what's happening. I want to hear more.",
+          "I'm here with you. What's on your mind?",
         analysis: {
           emotionalState: "neutral",
           themes: [],

@@ -206,11 +206,11 @@ export const sendMessage = async (req: Request, res: Response) => {
             userContext += `**Session History:** ${previousSessions.length} recent sessions\n`;
             
             // Extract key topics from previous sessions
-            const topics = new Set<string>();
+              const topics = new Set<string>();
             previousSessions.forEach(sess => {
               sess.messages.filter(m => m.role === 'user').slice(-3).forEach(msg => {
-                const content = msg.content.toLowerCase();
-                if (content.includes('work') || content.includes('job')) topics.add('work stress');
+                  const content = msg.content.toLowerCase();
+                  if (content.includes('work') || content.includes('job')) topics.add('work stress');
                 if (content.includes('relationship') || content.includes('partner')) topics.add('relationships');
                 if (content.includes('family')) topics.add('family');
                 if (content.includes('anxious') || content.includes('anxiety')) topics.add('anxiety');
@@ -247,7 +247,7 @@ export const sendMessage = async (req: Request, res: Response) => {
         // Validate response is not empty
         if (generatedText && generatedText.length > 0) {
           aiResponse = generatedText;
-          logger.info(`AI response generated for session ${sessionId} with enhanced memory context`);
+        logger.info(`AI response generated for session ${sessionId} with enhanced memory context`);
         } else {
           logger.warn("AI returned empty response, using fallback");
           logger.warn(`Response object: ${JSON.stringify(response)}`);
@@ -263,7 +263,7 @@ export const sendMessage = async (req: Request, res: Response) => {
 
     // Final validation: ensure response is never empty
     if (!aiResponse || aiResponse.trim().length === 0) {
-      aiResponse = "Tell me what's happening. I'm listening.";
+      aiResponse = "I'm here with you. What's on your mind?";
       logger.warn(`Using fallback response for session ${sessionId} due to empty AI response`);
     }
 
