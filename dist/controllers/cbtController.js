@@ -258,19 +258,19 @@ Please provide a JSON response with:
 Format your response as valid JSON only.`;
         }
         else if (type === 'mood_analysis') {
-            prompt = `You are a CBT therapist. Analyze this mood and situation:
+            prompt = `Analyze this mood and situation with empathy:
 
 Mood Level: ${mood}/10
 Emotions: ${emotions?.join(', ') || 'Not specified'}
 Situation: "${situation || text}"
 
-Please provide a JSON response with:
-1. copingStrategies: Array of 4-6 personalized coping strategies for this mood
+Provide a JSON response with:
+1. copingStrategies: Array of 4-6 brief, actionable coping strategies
 2. urgency: "immediate", "moderate", or "routine"
-3. suggestedActivities: Array of 3-5 activities that could help
-4. supportiveMessage: A brief, empathetic message
+3. suggestedActivities: Array of 3-5 simple activities
+4. supportiveMessage: A warm, brief message (2-3 sentences, 30-40 words max)
 
-Format your response as valid JSON only.`;
+Format as valid JSON only. Keep supportiveMessage conversational and empathetic.`;
         }
         else if (type === 'general_insights') {
             prompt = `You are a CBT therapist. Provide general CBT insights for:

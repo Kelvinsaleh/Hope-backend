@@ -97,7 +97,13 @@ async function generateAIResponseWithRetry(aiContext, retries = MAX_RETRIES) {
     for (let attempt = 0; attempt <= retries; attempt++) {
         try {
             logger_1.logger.info(`Attempting AI generation (attempt ${attempt + 1}/${retries + 1})`);
-            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+            const model = genAI.getGenerativeModel({
+                model: "gemini-2.5-flash",
+                generationConfig: {
+                    maxOutputTokens: 100, // Enforce brevity (50-60 words ≈ 80-100 tokens)
+                    temperature: 0.8, // More human-like variability
+                },
+            });
             const controller = new AbortController();
             const id = setTimeout(() => controller.abort(), 30000);
             const result = await model.generateContent(aiContext);
@@ -188,7 +194,7 @@ function generateFallbackResponse(aiContext) {
         return "It sounds like you're feeling overwhelmed right now. While I'm having some technical difficulties, here are some immediate strategies: Try breaking down what's stressing you into smaller, manageable pieces. Practice the 4-7-8 breathing technique (breathe in for 4, hold for 7, out for 8). Remember that it's okay to take breaks and ask for help when you need it.";
     }
     // Default fallback response
-    return "I'm experiencing some technical difficulties right now due to high demand, but I want you to know that I'm here to support you. Your thoughts and feelings are important. While I work through these issues, please remember that you're not alone. Consider taking a few deep breaths, reaching out to a trusted friend, or trying a mindfulness exercise. If you're in immediate distress, please contact a mental health professional or crisis support service. I'll be back to full functionality soon.";
+    return "I'm experiencing some technical difficulties right now, but I'm here for you. Your thoughts matter. Take a few deep breaths, and I'll be back soon. If you need immediate help, please reach out to a crisis support service.";
 }
 const sendMemoryEnhancedMessage = async (req, res) => {
     try {
@@ -203,7 +209,7 @@ const sendMemoryEnhancedMessage = async (req, res) => {
             return res.status(429).json({
                 error: "Rate limit exceeded. Please wait before sending another message.",
                 retryAfter: 60,
-                fallbackResponse: "I understand you'd like to continue our conversation. To ensure quality responses, please wait a moment before sending your next message. In the meantime, take a deep breath and know that I'm here to support you."
+                fallbackResponse: "I'm here for you. Take a moment to breathe, and we can continue when you're ready."
             });
         }
         // Get user data
@@ -349,25 +355,32 @@ async function gatherUserMemory(userId) {
     }
 }
 function createAIContext(message, memoryData, user, additionalContext) {
-    const basePrompt = `You are Hope, an AI therapist designed to provide compassionate, professional mental health support. You are having a conversation with ${user.name || 'a user'}.
+    const basePrompt = `You are Hope, a warm, compassionate AI that chats with ${user.name || 'someone'} about their thoughts, moods, and wellbeing.
 
-Your role:
-- Provide empathetic, non-judgmental support
-- Use evidence-based therapeutic techniques
-- Maintain professional boundaries
-- Encourage healthy coping strategies
-- Be available 24/7 for crisis support
+**STYLE RULES (CRITICAL - FOLLOW EXACTLY):**
+- Speak briefly — 2-4 sentences per reply max (50-60 words)
+- Use a calm, conversational tone
+- Be supportive but don't lecture or over-explain
+- Avoid repeating the user's words too much
+- End with a short, open question or reflection to keep the chat going naturally
+- Don't use long lists unless the user explicitly asks
+- Never say "As an AI…" or anything formal
+- Show empathy through your words, don't announce it
 
-Current conversation context:
+**TONE EXAMPLES:**
+User: "I feel tired lately." → You: "That sounds rough. Do you know what's been draining your energy most?"
+User: "I had a bad day." → You: "I'm sorry to hear that. Want to tell me what made it tough today?"
+User: "I can't focus on studying." → You: "That happens sometimes. Do you think stress or distractions are part of it?"
+
+**What you know about ${user.name || 'this person'}:**
+- ${memoryData.journalEntries.length} journal entries recently
+- ${memoryData.moodPatterns.length} mood records (recent mood: ${memoryData.moodPatterns[0]?.mood || 'unknown'}/10)
+- ${memoryData.meditationHistory.length} meditation sessions completed
+- ${memoryData.therapySessions.length} previous therapy chats
+
 User message: "${message}"
 
-User's recent activity and patterns:
-- Journal entries: ${memoryData.journalEntries.length} recent entries
-- Mood patterns: ${memoryData.moodPatterns.length} recent mood records
-- Meditation sessions: ${memoryData.meditationHistory.length} completed sessions
-- Therapy sessions: ${memoryData.therapySessions.length} previous sessions
-
-Please respond as Hope, maintaining a warm, professional, and supportive tone. Focus on the user's current message while being aware of their recent patterns and activities.`;
+Respond in 2-4 sentences max. Keep it clear, emotionally aware, and conversational. Focus on empathy, not detail.`;
     return basePrompt;
 }
 async function generatePersonalizedSuggestions(memoryData, userMessage, aiResponse) {

@@ -89,21 +89,29 @@ exports.processChatMessage = client_1.inngest.createFunction({
         // Generate therapeutic response
         const response = await step.run("generate-response", async () => {
             try {
-                const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-                const prompt = `${systemPrompt}
-          
-          Based on the following context, generate a therapeutic response:
-          Message: ${message}
-          Analysis: ${JSON.stringify(analysis)}
-          Memory: ${JSON.stringify(memory)}
-          Goals: ${JSON.stringify(goals)}
-          
-          Provide a response that:
-          1. Addresses the immediate emotional needs
-          2. Uses appropriate therapeutic techniques
-          3. Shows empathy and understanding
-          4. Maintains professional boundaries
-          5. Considers safety and well-being`;
+                const model = genAI.getGenerativeModel({
+                    model: "gemini-2.5-flash",
+                    generationConfig: {
+                        maxOutputTokens: 100, // Brief responses (50-60 words)
+                        temperature: 0.8,
+                    },
+                });
+                const prompt = `You are Hope, a warm, compassionate AI chatting about thoughts, moods, and wellbeing.
+
+**STYLE RULES (CRITICAL):**
+- Speak briefly — 2-4 sentences max (50-60 words)
+- Use a calm, conversational tone
+- Be supportive but don't lecture
+- End with a short, open question or reflection
+- Never say "As an AI…"
+- Show empathy through your words
+
+User message: ${message}
+Emotional state: ${analysis.emotionalState}
+Themes: ${analysis.themes.join(', ')}
+Risk level: ${analysis.riskLevel}/10
+
+Respond in 2-4 sentences max. Keep it clear, emotionally aware, and conversational.`;
                 const result = await model.generateContent(prompt);
                 const responseText = result.response.text().trim();
                 logger_1.logger.info("Generated response:", { responseText });
@@ -112,7 +120,7 @@ exports.processChatMessage = client_1.inngest.createFunction({
             catch (error) {
                 logger_1.logger.error("Error generating response:", { error, message });
                 // Return a default response instead of throwing
-                return "I'm here to support you. Could you tell me more about what's on your mind?";
+                return "I'm here to support you. What's on your mind?";
             }
         });
         // Return the response in the expected format
