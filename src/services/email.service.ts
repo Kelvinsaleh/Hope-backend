@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import { logger } from '../utils/logger';
 
 interface EmailOptions {
@@ -9,80 +9,65 @@ interface EmailOptions {
 }
 
 class EmailService {
-  private transporter: nodemailer.Transporter | null = null;
+  private resend: Resend | null = null;
   private isConfigured: boolean = false;
+  private fromEmail: string = '';
 
   constructor() {
     this.initialize();
   }
 
   private initialize() {
-    const emailUser = process.env.EMAIL_USER;
-    const emailPass = process.env.EMAIL_PASSWORD;
-    const emailHost = process.env.EMAIL_HOST || 'smtp.gmail.com';
-    const emailPort = parseInt(process.env.EMAIL_PORT || '587');
+    const resendApiKey = process.env.RESEND_API_KEY;
+    const fromEmail = process.env.FROM_EMAIL || 'noreply@hope-therapy.com';
 
-    if (!emailUser || !emailPass) {
+    if (!resendApiKey) {
       logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      logger.error('❌ EMAIL SERVICE NOT CONFIGURED - OTP EMAILS WILL NOT BE SENT!');
+      logger.error('❌ RESEND API KEY NOT CONFIGURED - OTP EMAILS WILL NOT BE SENT!');
       logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       logger.error('');
       logger.error('Required environment variables missing:');
-      if (!emailUser) logger.error('  ❌ EMAIL_USER is not set');
-      if (!emailPass) logger.error('  ❌ EMAIL_PASSWORD is not set');
+      logger.error('  ❌ RESEND_API_KEY is not set');
       logger.error('');
-      logger.error('📖 Setup Guide: See Hope-backend/EMAIL_SETUP_GUIDE.md');
-      logger.error('🔗 Quick Start: https://myaccount.google.com/apppasswords');
+      logger.error('📖 Setup Guide:');
+      logger.error('  1. Sign up at https://resend.com/');
+      logger.error('  2. Get your API key from the dashboard');
+      logger.error('  3. Add to Render environment variables:');
+      logger.error('     RESEND_API_KEY=re_your_api_key_here');
+      logger.error('     FROM_EMAIL=noreply@yourdomain.com');
       logger.error('');
-      logger.error('Add to your .env file:');
-      logger.error('  EMAIL_USER=your-email@gmail.com');
-      logger.error('  EMAIL_PASSWORD=your-16-char-app-password');
-      logger.error('  EMAIL_HOST=smtp.gmail.com');
-      logger.error('  EMAIL_PORT=587');
-      logger.error('');
+      logger.error('🔗 Resend Dashboard: https://resend.com/api-keys');
       logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       this.isConfigured = false;
       return;
     }
 
     try {
-      this.transporter = nodemailer.createTransport({
-        host: emailHost,
-        port: emailPort,
-        secure: emailPort === 465, // true for 465, false for other ports
-        auth: {
-          user: emailUser,
-          pass: emailPass,
-        },
-        // Add connection timeout
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-      });
-
+      this.resend = new Resend(resendApiKey);
+      this.fromEmail = fromEmail;
       this.isConfigured = true;
-      logger.info('✅ Email service initialized successfully');
-      logger.info(`📧 Using: ${emailUser} via ${emailHost}:${emailPort}`);
+      logger.info('✅ Resend email service initialized successfully');
+      logger.info(`📧 Using: ${fromEmail} via Resend API`);
     } catch (error: any) {
       logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      logger.error('❌ Failed to initialize email service');
+      logger.error('❌ Failed to initialize Resend email service');
       logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       logger.error('Error:', error?.message || error);
       logger.error('');
       logger.error('Common issues:');
-      logger.error('  1. Invalid EMAIL_PASSWORD (use App Password for Gmail)');
-      logger.error('  2. 2FA not enabled on Gmail account');
-      logger.error('  3. Incorrect SMTP host or port');
-      logger.error('  4. Firewall blocking SMTP connection');
+      logger.error('  1. Invalid RESEND_API_KEY');
+      logger.error('  2. API key not activated');
+      logger.error('  3. Domain not verified (if using custom domain)');
       logger.error('');
-      logger.error('📖 See EMAIL_SETUP_GUIDE.md for detailed instructions');
+      logger.error('🔗 Check your API key at: https://resend.com/api-keys');
       logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       this.isConfigured = false;
     }
   }
 
   async sendEmail(options: EmailOptions): Promise<boolean> {
-    if (!this.isConfigured || !this.transporter) {
-      logger.error(`❌ Cannot send email to ${options.to} - Email service not configured`);
+    if (!this.isConfigured || !this.resend) {
+      logger.error(`❌ Cannot send email to ${options.to} - Resend service not configured`);
       logger.error('📧 Subject: ' + options.subject);
       // In development, log the email content
       if (process.env.NODE_ENV === 'development') {
@@ -97,17 +82,20 @@ class EmailService {
 
     try {
       logger.info(`📤 Attempting to send email to ${options.to}...`);
-      const info = await this.transporter.sendMail({
-        from: `"Hope Therapy" <${process.env.EMAIL_USER}>`,
-        to: options.to,
+      const { data, error } = await this.resend.emails.send({
+        from: `"Hope Therapy" <${this.fromEmail}>`,
+        to: [options.to],
         subject: options.subject,
         text: options.text,
         html: options.html,
       });
 
+      if (error) {
+        throw new Error(`Resend API error: ${error.message}`);
+      }
+
       logger.info(`✅ Email sent successfully to ${options.to}`);
-      logger.info(`📬 Message ID: ${info.messageId}`);
-      logger.info(`📊 Response: ${info.response}`);
+      logger.info(`📬 Message ID: ${data?.id}`);
       return true;
     } catch (error: any) {
       logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -115,31 +103,27 @@ class EmailService {
       logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       logger.error('Error details:', error);
       
-      if (error.code) {
-        logger.error(`Error code: ${error.code}`);
-      }
-      
-      if (error.response) {
-        logger.error(`SMTP Response: ${error.response}`);
+      if (error.message) {
+        logger.error(`Error message: ${error.message}`);
       }
       
       // Provide helpful error messages
-      if (error.code === 'EAUTH') {
+      if (error.message?.includes('Invalid API key')) {
         logger.error('');
-        logger.error('🔐 Authentication failed. Common causes:');
-        logger.error('  1. Incorrect EMAIL_PASSWORD (must use App Password for Gmail)');
-        logger.error('  2. 2FA not enabled on Gmail account');
-        logger.error('  3. App Password not generated correctly');
+        logger.error('🔐 Invalid API key. Common causes:');
+        logger.error('  1. Incorrect RESEND_API_KEY');
+        logger.error('  2. API key not activated');
+        logger.error('  3. API key expired or revoked');
         logger.error('');
-        logger.error('🔗 Generate Gmail App Password: https://myaccount.google.com/apppasswords');
-      } else if (error.code === 'ETIMEDOUT' || error.code === 'ECONNECTION') {
+        logger.error('🔗 Check your API key at: https://resend.com/api-keys');
+      } else if (error.message?.includes('domain')) {
         logger.error('');
-        logger.error('🌐 Connection timeout. Common causes:');
-        logger.error('  1. SMTP port blocked by firewall');
-        logger.error('  2. Incorrect EMAIL_HOST or EMAIL_PORT');
-        logger.error('  3. Network connectivity issues');
+        logger.error('🌐 Domain verification issue. Common causes:');
+        logger.error('  1. Domain not verified in Resend');
+        logger.error('  2. DNS records not properly configured');
+        logger.error('  3. Using unverified domain in FROM_EMAIL');
         logger.error('');
-        logger.error(`Current config: ${process.env.EMAIL_HOST}:${process.env.EMAIL_PORT}`);
+        logger.error('🔗 Verify domain at: https://resend.com/domains');
       }
       
       logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -507,4 +491,3 @@ class EmailService {
 }
 
 export const emailService = new EmailService();
-
