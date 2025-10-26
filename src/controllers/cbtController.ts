@@ -264,7 +264,7 @@ export const generateAICBTInsights = async (req: Request, res: Response) => {
       });
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     let prompt = "";
     
@@ -426,7 +426,7 @@ export const getCBTInsights = async (req: Request, res: Response) => {
     let aiRecommendations: string[] = [];
     if (genAI && thoughtRecords.length > 0) {
       try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const prompt = `As a CBT therapist, analyze this user's pattern:
 
 Common cognitive distortions: ${commonDistortions.map(d => d.distortion).join(', ')}
