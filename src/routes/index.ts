@@ -12,6 +12,7 @@ import moodRoutes from "./mood";
 import activityRoutes from "./activity";
 import memoryEnhancedChatRoutes from "./memoryEnhancedChat";
 import playlistRoutes from './playlist';
+import communityRoutes from './community';
 
 const router = express.Router();
 
@@ -28,5 +29,6 @@ router.use("/mood", moodRoutes);
 router.use("/activity", activityRoutes);
 router.use("/memory-enhanced-chat", memoryEnhancedChatRoutes);
 router.use("/playlists", playlistRoutes);
+router.use("/community", communityRoutes);
 
 export default router;
