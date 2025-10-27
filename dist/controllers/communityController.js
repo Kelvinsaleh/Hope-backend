@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getCommunityStats = exports.getDailyPrompts = exports.joinChallenge = exports.getActiveChallenges = exports.createComment = exports.getPostComments = exports.reactToPost = exports.createPost = exports.getSpacePosts = exports.getCommunitySpaces = void 0;
+exports.getCommunityStats = exports.getRecentActivity = exports.getDailyPrompts = exports.joinChallenge = exports.getActiveChallenges = exports.createComment = exports.getPostComments = exports.reactToPost = exports.createPost = exports.getSpacePosts = exports.getCommunitySpaces = void 0;
 const mongoose_1 = require("mongoose");
 const communityModeration_1 = require("../middleware/communityModeration");
 const logger_1 = require("../utils/logger");
@@ -334,18 +334,87 @@ const joinChallenge = async (req, res) => {
     }
 };
 exports.joinChallenge = joinChallenge;
-// Get daily prompts
+// Dynamic reflection prompts library
+const REFLECTION_PROMPTS = {
+    morning: [
+        "What's one thing you're looking forward to today?",
+        "What's one intention you want to set for this day?",
+        "What small act of kindness can you do for yourself today?",
+        "What thought would you like to let go of this morning?",
+        "What's bringing you peace right now?"
+    ],
+    afternoon: [
+        "What moment from today has already brought you joy?",
+        "What's one thing you're grateful for right now?",
+        "How are you taking care of yourself today?",
+        "What challenge are you facing, and how are you growing from it?",
+        "What would make your heart feel lighter today?"
+    ],
+    evening: [
+        "What's one thing that went well for you today?",
+        "What are you grateful for as this day ends?",
+        "What did you learn about yourself today?",
+        "How did you show up for yourself today?",
+        "What brings you calm as you wind down?"
+    ],
+    weekend: [
+        "How are you spending this time to restore yourself?",
+        "What activities bring you genuine happiness?",
+        "What relationships in your life need attention right now?",
+        "What boundary do you need to set for your wellbeing?",
+        "How can you practice self-compassion today?"
+    ]
+};
+// Get dynamic prompts based on time and context
 const getDailyPrompts = async (req, res) => {
     try {
-        const prompts = await Community_1.CommunityPrompt.find({
+        const now = new Date();
+        const hour = now.getHours();
+        const dayOfWeek = now.getDay();
+        // Determine time of day context
+        let timeContext;
+        if (hour < 12) {
+            timeContext = 'morning';
+        }
+        else if (hour < 17) {
+            timeContext = 'afternoon';
+        }
+        else if (hour < 22) {
+            timeContext = 'evening';
+        }
+        else {
+            timeContext = 'evening';
+        }
+        // Use weekend prompts on weekends
+        if (dayOfWeek === 0 || dayOfWeek === 6) {
+            timeContext = 'weekend';
+        }
+        // Get prompts for this time context
+        const dynamicPrompts = REFLECTION_PROMPTS[timeContext];
+        // Also get saved prompts from database
+        const dbPrompts = await Community_1.CommunityPrompt.find({
             isActive: true
         })
             .populate('spaceId', 'name')
-            .sort({ createdAt: -1 })
-            .limit(5);
+            .limit(3);
+        // Create hybrid response with both dynamic and database prompts
+        const combinedPrompts = dbPrompts.map(prompt => prompt.toObject());
+        // Add a couple of dynamic prompts
+        const additionalPrompts = dynamicPrompts.slice(0, 2).map((title, index) => ({
+            title,
+            content: `Reflect on this prompt and share your thoughts with the community.`,
+            isActive: true,
+            isDynamic: true,
+            _id: `dynamic-${index}`,
+            createdAt: new Date(),
+            updatedAt: new Date()
+        }));
+        const allPrompts = [...combinedPrompts, ...additionalPrompts];
         res.json({
             success: true,
-            prompts
+            prompts: allPrompts,
+            timeContext,
+            suggestedResponse: "Share your reflections in your journal or with the community!"
         });
     }
     catch (error) {
@@ -357,6 +426,49 @@ const getDailyPrompts = async (req, res) => {
     }
 };
 exports.getDailyPrompts = getDailyPrompts;
+// Get recent activity feed
+const getRecentActivity = async (req, res) => {
+    try {
+        // Get recent posts
+        const recentPosts = await Community_1.CommunityPost.find()
+            .populate('userId', 'username')
+            .populate('spaceId', 'name icon')
+            .sort({ createdAt: -1 })
+            .limit(5)
+            .select('content userId spaceId createdAt mood isAnonymous');
+        // Get recent comments
+        const recentComments = await Community_1.CommunityComment.find()
+            .populate('userId', 'username')
+            .populate('postId')
+            .sort({ createdAt: -1 })
+            .limit(5)
+            .select('content userId createdAt isAnonymous');
+        // Get recent challenge joins
+        const recentChallenges = await Community_1.CommunityChallenge.find()
+            .populate('spaceId', 'name')
+            .sort({ updatedAt: -1 })
+            .limit(3)
+            .select('title spaceId participants');
+        const activity = {
+            posts: recentPosts,
+            comments: recentComments,
+            challenges: recentChallenges,
+            timestamp: new Date()
+        };
+        res.json({
+            success: true,
+            activity
+        });
+    }
+    catch (error) {
+        logger_1.logger.error('Error fetching activity:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch activity'
+        });
+    }
+};
+exports.getRecentActivity = getRecentActivity;
 // Get community stats
 const getCommunityStats = async (req, res) => {
     try {

@@ -10,7 +10,8 @@ import {
   getActiveChallenges,
   joinChallenge,
   getDailyPrompts,
-  getCommunityStats
+  getCommunityStats,
+  getRecentActivity
 } from '../controllers/communityController';
 
 const router = express.Router();
@@ -20,6 +21,7 @@ router.get('/spaces', getCommunitySpaces);
 router.get('/stats', getCommunityStats);
 router.get('/challenges', getActiveChallenges);
 router.get('/prompts', getDailyPrompts);
+router.get('/activity', getRecentActivity);
 router.get('/posts/:postId/comments', getPostComments);
 
 // Protected routes (auth required)
