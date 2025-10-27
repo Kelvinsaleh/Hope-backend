@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { Types } from 'mongoose';
+import { CommunityModeration } from '../middleware/communityModeration';
 import { logger } from '../utils/logger';
 import { 
   CommunitySpace, 
@@ -19,27 +20,6 @@ async function isPremiumUser(userId: Types.ObjectId): Promise<boolean> {
     expiresAt: { $gt: new Date() }
   });
   return !!subscription;
-}
-
-// AI Content Moderation
-async function moderateContent(content: string): Promise<{ isSafe: boolean; suggestion?: string }> {
-  // Basic keyword filtering for harmful content
-  const harmfulKeywords = [
-    'kill myself', 'suicide', 'end it all', 'not worth living',
-    'hate you', 'you suck', 'worthless', 'stupid'
-  ];
-  
-  const lowerContent = content.toLowerCase();
-  const hasHarmfulContent = harmfulKeywords.some(keyword => lowerContent.includes(keyword));
-  
-  if (hasHarmfulContent) {
-    return {
-      isSafe: false,
-      suggestion: "Please consider rephrasing this in a more supportive way. Our community values kindness and encouragement."
-    };
-  }
-  
-  return { isSafe: true };
 }
 
 // Get all community spaces
@@ -110,11 +90,15 @@ export const createPost = async (req: Request, res: Response) => {
     }
     
     // Moderate content
-    const moderation = await moderateContent(content);
+    const moderation = await CommunityModeration.moderateContent(content);
     if (!moderation.isSafe) {
       return res.status(400).json({
         success: false,
-        error: moderation.suggestion
+        error: moderation.suggestion,
+        moderation: {
+          confidence: moderation.confidence,
+          flags: moderation.flags
+        }
       });
     }
     
@@ -130,8 +114,8 @@ export const createPost = async (req: Request, res: Response) => {
     await post.save();
     
     // Generate AI reflection for premium users
-    if (hasPremium && mood) {
-      const aiReflection = generateAIReflection(content, mood);
+    if (hasPremium) {
+      const aiReflection = await CommunityModeration.generateAIReflection(content, mood);
       post.aiReflection = aiReflection;
       await post.save();
     }
@@ -213,11 +197,15 @@ export const createComment = async (req: Request, res: Response) => {
     }
     
     // Moderate content
-    const moderation = await moderateContent(content);
+    const moderation = await CommunityModeration.moderateContent(content);
     if (!moderation.isSafe) {
       return res.status(400).json({
         success: false,
-        error: moderation.suggestion
+        error: moderation.suggestion,
+        moderation: {
+          confidence: moderation.confidence,
+          flags: moderation.flags
+        }
       });
     }
     
@@ -340,19 +328,6 @@ export const getDailyPrompts = async (req: Request, res: Response) => {
     });
   }
 };
-
-// Generate AI reflection for posts
-function generateAIReflection(content: string, mood: string): string {
-  const reflections = [
-    `Your ${mood.toLowerCase()} mood shows through your words. Thank you for sharing your experience.`,
-    `It takes courage to express ${mood.toLowerCase()} feelings. You're not alone in this journey.`,
-    `Your reflection on ${mood.toLowerCase()} emotions is valuable. Every step forward matters.`,
-    `Sharing your ${mood.toLowerCase()} thoughts helps others feel understood. Thank you for your openness.`,
-    `Your ${mood.toLowerCase()} perspective adds depth to our community. Keep being authentic.`
-  ];
-  
-  return reflections[Math.floor(Math.random() * reflections.length)];
-}
 
 // Get community stats
 export const getCommunityStats = async (req: Request, res: Response) => {

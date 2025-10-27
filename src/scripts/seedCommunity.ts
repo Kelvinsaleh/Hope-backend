@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { CommunitySpace, CommunityPrompt } from '../models/Community';
+import { CommunitySpace, CommunityPrompt, CommunityChallenge } from '../models/Community';
 import { logger } from '../utils/logger';
 
 const seedCommunityData = async () => {
@@ -7,6 +7,7 @@ const seedCommunityData = async () => {
     // Clear existing data
     await CommunitySpace.deleteMany({});
     await CommunityPrompt.deleteMany({});
+    await CommunityChallenge.deleteMany({});
     
     // Create community spaces
     const spaces = [
@@ -81,6 +82,43 @@ const seedCommunityData = async () => {
     
     await CommunityPrompt.insertMany(prompts);
     logger.info(`Created ${prompts.length} community prompts`);
+    
+    // Create initial challenges
+    const challenges = [
+      {
+        title: '7 Days of Gratitude',
+        description: 'Share one thing you\'re grateful for each day for a week. Build a habit of appreciation and positivity.',
+        spaceId: createdSpaces[0]._id, // Daily Reflections
+        duration: 7,
+        participants: [],
+        isActive: true,
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days from now
+      },
+      {
+        title: 'Mindful Breathing Challenge',
+        description: 'Practice 5 minutes of mindful breathing daily for 5 days. Share your experiences and techniques.',
+        spaceId: createdSpaces[3]._id, // Sleep & Mindfulness
+        duration: 5,
+        participants: [],
+        isActive: true,
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000) // 5 days from now
+      },
+      {
+        title: 'Self-Care Week',
+        description: 'Commit to one self-care activity each day for a week. Share what you did and how it made you feel.',
+        spaceId: createdSpaces[2]._id, // Self-Love & Growth
+        duration: 7,
+        participants: [],
+        isActive: true,
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days from now
+      }
+    ];
+    
+    await CommunityChallenge.insertMany(challenges);
+    logger.info(`Created ${challenges.length} community challenges`);
     
     logger.info('Community data seeded successfully!');
   } catch (error) {
