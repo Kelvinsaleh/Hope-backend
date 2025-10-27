@@ -42,12 +42,20 @@ export interface ICommunityComment extends Document {
   updatedAt: Date;
 }
 
+export interface IChallengeProgress {
+  userId: mongoose.Types.ObjectId;
+  completedDays: number;
+  totalDays: number;
+  joinedAt: Date;
+}
+
 export interface ICommunityChallenge extends Document {
   title: string;
   description: string;
   spaceId: mongoose.Types.ObjectId;
   duration: number; // days
   participants: mongoose.Types.ObjectId[];
+  participantProgress: IChallengeProgress[];
   isActive: boolean;
   startDate: Date;
   endDate: Date;
@@ -117,6 +125,12 @@ const CommunityChallengeSchema = new Schema<ICommunityChallenge>({
   spaceId: { type: Schema.Types.ObjectId, ref: 'CommunitySpace', required: true },
   duration: { type: Number, required: true },
   participants: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+  participantProgress: [{
+    userId: { type: Schema.Types.ObjectId, ref: 'User' },
+    completedDays: { type: Number, default: 0 },
+    totalDays: { type: Number },
+    joinedAt: { type: Date, default: Date.now }
+  }],
   isActive: { type: Boolean, default: true },
   startDate: { type: Date, required: true },
   endDate: { type: Date, required: true }

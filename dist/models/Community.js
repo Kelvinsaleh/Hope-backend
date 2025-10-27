@@ -84,6 +84,12 @@ const CommunityChallengeSchema = new mongoose_1.Schema({
     spaceId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'CommunitySpace', required: true },
     duration: { type: Number, required: true },
     participants: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }],
+    participantProgress: [{
+            userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
+            completedDays: { type: Number, default: 0 },
+            totalDays: { type: Number },
+            joinedAt: { type: Date, default: Date.now }
+        }],
     isActive: { type: Boolean, default: true },
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true }

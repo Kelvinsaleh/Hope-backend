@@ -340,8 +340,19 @@ export const joinChallenge = async (req: Request, res: Response) => {
       });
     }
     
-    if (!challenge.participants.includes(userId)) {
+    const alreadyJoined = challenge.participants.some(id => id.toString() === userId.toString());
+    
+    if (!alreadyJoined) {
       challenge.participants.push(userId);
+      
+      // Initialize progress tracking for this user
+      challenge.participantProgress.push({
+        userId,
+        completedDays: 0,
+        totalDays: challenge.duration,
+        joinedAt: new Date()
+      });
+      
       await challenge.save();
     }
     
