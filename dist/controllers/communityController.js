@@ -94,7 +94,24 @@ exports.getSpacePosts = getSpacePosts;
 const createPost = async (req, res) => {
     try {
         const userId = new mongoose_1.Types.ObjectId(req.user._id);
-        const { spaceId, content, mood, isAnonymous } = req.body;
+        let { spaceId, content, mood, isAnonymous } = req.body;
+        // Validate spaceId
+        if (!spaceId || spaceId.trim() === '') {
+            return res.status(400).json({
+                success: false,
+                error: 'spaceId is required'
+            });
+        }
+        // Convert spaceId to ObjectId
+        try {
+            spaceId = new mongoose_1.Types.ObjectId(spaceId);
+        }
+        catch (error) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid spaceId format'
+            });
+        }
         // Check premium access for posting
         const hasPremium = await isPremiumUser(userId);
         if (!hasPremium) {

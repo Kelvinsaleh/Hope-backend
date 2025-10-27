@@ -108,7 +108,25 @@ export const getSpacePosts = async (req: Request, res: Response) => {
 export const createPost = async (req: Request, res: Response) => {
   try {
     const userId = new Types.ObjectId(req.user._id);
-    const { spaceId, content, mood, isAnonymous } = req.body;
+    let { spaceId, content, mood, isAnonymous } = req.body;
+    
+    // Validate spaceId
+    if (!spaceId || spaceId.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'spaceId is required'
+      });
+    }
+    
+    // Convert spaceId to ObjectId
+    try {
+      spaceId = new Types.ObjectId(spaceId);
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid spaceId format'
+      });
+    }
     
     // Check premium access for posting
     const hasPremium = await isPremiumUser(userId);
