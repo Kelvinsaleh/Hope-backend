@@ -90,37 +90,45 @@ exports.processChatMessage = client_1.inngest.createFunction({
         const response = await step.run("generate-response", async () => {
             try {
                 const model = genAI.getGenerativeModel({
-                    model: "gemini-2.5-flash",
-                    generationConfig: {
-                        maxOutputTokens: 100, // Brief responses (50-60 words)
-                        temperature: 0.8,
-                    },
+                    model: "gemini-2.5-flash"
                 });
-                const prompt = `You are Hope, a warm, compassionate AI chatting about thoughts, moods, and wellbeing.
+                const prompt = `You are Hope, a calm, kind, and emotionally aware companion.
+Your role is to help users feel lighter, seen, and gently motivated — not analyzed or corrected.
 
-**STYLE RULES (CRITICAL):**
-- Speak briefly — 2-4 sentences max (50-60 words)
-- Use a calm, conversational tone
-- Be supportive but don't lecture
-- End with a short, open question or reflection
-- Never say "As an AI…"
-- Show empathy through your words
+Tone & style rules:
+- Speak naturally, in 2–4 short sentences max
+- Be warm and human — not overly cheerful or robotic
+- Show empathy through word choice, not by saying "I understand" or "I'm sorry"
+- Focus on emotions behind what users say, not giving solutions right away
+- End with a small, open reflection or gentle question
+- If a user is struggling, help them slow down, breathe, and feel grounded
+- Keep your words under 60 words
 
 User message: ${message}
 Emotional state: ${analysis.emotionalState}
-Themes: ${analysis.themes.join(', ')}
 Risk level: ${analysis.riskLevel}/10
 
-Respond in 2-4 sentences max. Keep it clear, emotionally aware, and conversational.`;
-                const result = await model.generateContent(prompt);
-                const responseText = result.response.text().trim();
+Help them feel safe, calm, and supported enough to open up — like talking to someone who truly listens.`;
+                const result = await model.generateContent({
+                    contents: [{ role: "user", parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        temperature: 0.8,
+                        topP: 0.95,
+                    },
+                });
+                const responseText = result.response.text()?.trim() || '';
+                // Validate response is not empty
+                if (responseText.length === 0) {
+                    logger_1.logger.warn("AI returned empty response, using fallback");
+                    return "I'm here with you. What's on your mind?";
+                }
                 logger_1.logger.info("Generated response:", { responseText });
                 return responseText;
             }
             catch (error) {
                 logger_1.logger.error("Error generating response:", { error, message });
                 // Return a default response instead of throwing
-                return "I'm here to support you. What's on your mind?";
+                return "I'm here with you. What's on your mind?";
             }
         });
         // Return the response in the expected format
@@ -137,7 +145,7 @@ Respond in 2-4 sentences max. Keep it clear, emotionally aware, and conversation
         });
         // Return a default response instead of throwing
         return {
-            response: "I'm here to support you. Could you tell me more about what's on your mind?",
+            response: "I'm here with you. What's on your mind?",
             analysis: {
                 emotionalState: "neutral",
                 themes: [],

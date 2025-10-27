@@ -32,6 +32,7 @@ const playlist_1 = __importDefault(require("./routes/playlist"));
 const user_1 = __importDefault(require("./routes/user"));
 const cbt_1 = __importDefault(require("./routes/cbt"));
 const cleanup_1 = __importDefault(require("./routes/cleanup"));
+const index_1 = __importDefault(require("./routes/index"));
 const db_1 = require("./utils/db");
 const healthController_1 = require("./controllers/healthController");
 // Load environment variables
@@ -129,6 +130,7 @@ app.get("/health", healthController_1.healthCheck);
 app.get("/ready", healthController_1.readinessCheck);
 app.get("/keepalive", healthController_1.keepAlive);
 // API routes
+app.use('/', index_1.default);
 app.use("/auth", auth_1.default);
 app.use("/chat", chat_1.default);
 app.use("/memory-enhanced-chat", memoryEnhancedChat_1.default);

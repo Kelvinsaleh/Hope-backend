@@ -18,6 +18,7 @@ const chatMessageSchema = new mongoose_1.Schema({
 const chatSessionSchema = new mongoose_1.Schema({
     sessionId: { type: String, required: true, unique: true },
     userId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true },
+    title: { type: String },
     startTime: { type: Date, required: true },
     endTime: { type: Date },
     status: {

@@ -99,18 +99,24 @@ async function generateAIResponseWithRetry(aiContext, retries = MAX_RETRIES) {
         try {
             logger_1.logger.info(`Attempting AI generation (attempt ${attempt + 1}/${retries + 1})`);
             const model = genAI.getGenerativeModel({
-                model: "gemini-2.5-flash",
-                generationConfig: {
-                    maxOutputTokens: 100, // Enforce brevity (50-60 words ≈ 80-100 tokens)
-                    temperature: 0.8, // More human-like variability
-                },
+                model: "gemini-2.5-flash"
             });
             const controller = new AbortController();
             const id = setTimeout(() => controller.abort(), 30000);
-            const result = await model.generateContent(aiContext);
+            const result = await model.generateContent({
+                contents: [{ role: "user", parts: [{ text: aiContext }] }],
+                generationConfig: {
+                    temperature: 0.8,
+                    topP: 0.95,
+                },
+            });
             const response = await result.response;
-            const responseText = response.text();
+            const responseText = response.text()?.trim() || '';
             clearTimeout(id);
+            // Validate response is not empty
+            if (responseText.length === 0) {
+                throw new Error('AI returned empty response');
+            }
             logger_1.logger.info(`AI generation successful on attempt ${attempt + 1}`);
             return responseText;
         }
@@ -183,19 +189,19 @@ function generateFallbackResponse(aiContext) {
     const userMessage = messageMatch ? messageMatch[1].toLowerCase() : '';
     // Generate contextual fallback responses
     if (userMessage.includes('help') || userMessage.includes('support')) {
-        return "I understand you're looking for support right now. While I'm experiencing some technical difficulties, I want you to know that what you're feeling is valid. Consider reaching out to a trusted friend, family member, or mental health professional. If you're in crisis, please contact a crisis helpline in your area.";
+        return "I'm having technical trouble right now, but your feelings matter. If you need support urgently, reach out to someone you trust or a crisis helpline. I'll be back soon.";
     }
     if (userMessage.includes('anxious') || userMessage.includes('anxiety')) {
-        return "I hear that you're feeling anxious. While I'm having some technical issues right now, here are some immediate techniques that can help: Try taking slow, deep breaths (4 counts in, 4 counts out), practice grounding by naming 5 things you can see, 4 you can hear, 3 you can touch, 2 you can smell, and 1 you can taste. Remember, anxiety is temporary and you will get through this.";
+        return "I'm having technical issues, but anxiety is real and it passes. Try slow breaths or grounding yourself with what you can see and touch around you. Take it moment by moment.";
     }
     if (userMessage.includes('sad') || userMessage.includes('depressed') || userMessage.includes('down')) {
-        return "I can sense you're going through a difficult time. Although I'm experiencing some technical challenges, I want to remind you that your feelings are valid and you're not alone. Consider doing something small that usually brings you comfort, reaching out to someone you trust, or engaging in gentle movement like a short walk. Your mental health matters.";
+        return "I'm having some technical trouble connecting right now. Whatever you're feeling is real and valid. Do something small that feels safe — reach out to someone, take a walk, or just rest. You don't have to push through alone.";
     }
     if (userMessage.includes('stress') || userMessage.includes('overwhelmed')) {
-        return "It sounds like you're feeling overwhelmed right now. While I'm having some technical difficulties, here are some immediate strategies: Try breaking down what's stressing you into smaller, manageable pieces. Practice the 4-7-8 breathing technique (breathe in for 4, hold for 7, out for 8). Remember that it's okay to take breaks and ask for help when you need it.";
+        return "I'm experiencing technical difficulties, but it sounds like there's a lot on you right now. Try breaking one thing into smaller pieces, or just pause and breathe. It's okay to step back.";
     }
     // Default fallback response
-    return "I'm experiencing some technical difficulties right now, but I'm here for you. Your thoughts matter. Take a few deep breaths, and I'll be back soon. If you need immediate help, please reach out to a crisis support service.";
+    return "I'm having technical trouble right now, but what you're going through matters. Take some breaths, and I'll be back soon. If you need immediate help, reach out to a crisis service.";
 }
 const sendMemoryEnhancedMessage = async (req, res) => {
     try {
@@ -210,7 +216,7 @@ const sendMemoryEnhancedMessage = async (req, res) => {
             return res.status(429).json({
                 error: "Rate limit exceeded. Please wait before sending another message.",
                 retryAfter: 60,
-                fallbackResponse: "I'm here for you. Take a moment to breathe, and we can continue when you're ready."
+                fallbackResponse: "Take a moment to breathe. I'll be ready when you are."
             });
         }
         // Get user data
@@ -248,6 +254,12 @@ const sendMemoryEnhancedMessage = async (req, res) => {
             aiMessage = generateFallbackResponse(aiContext);
             isFailover = true;
             logger_1.logger.info(`Using fallback response`);
+        }
+        // Final validation: ensure response is never empty
+        if (!aiMessage || aiMessage.trim().length === 0) {
+            aiMessage = "I'm here with you. What's on your mind?";
+            isFailover = true;
+            logger_1.logger.warn(`Using final fallback due to empty AI response`);
         }
         // Save messages to session
         session.messages.push({
