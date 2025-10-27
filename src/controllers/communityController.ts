@@ -334,7 +334,8 @@ export const getCommunityStats = async (req: Request, res: Response) => {
   try {
     const totalPosts = await CommunityPost.countDocuments();
     const totalComments = await CommunityComment.countDocuments();
-    const activeUsers = await CommunityPost.distinct('userId').length;
+    const activeUserIds = await CommunityPost.distinct('userId');
+    const activeUsers = activeUserIds.length;
     
     res.json({
       success: true,
