@@ -17,6 +17,8 @@ const router = express.Router();
 // Public routes (no auth required)
 router.get('/spaces', getCommunitySpaces);
 router.get('/stats', getCommunityStats);
+router.get('/challenges', getActiveChallenges);
+router.get('/prompts', getDailyPrompts);
 
 // Protected routes (auth required)
 router.use(authenticateToken);
@@ -30,10 +32,6 @@ router.post('/posts/:postId/react', reactToPost);
 router.post('/comments', createComment);
 
 // Challenges
-router.get('/challenges', getActiveChallenges);
 router.post('/challenges/:challengeId/join', joinChallenge);
-
-// Prompts
-router.get('/prompts', getDailyPrompts);
 
 export default router;
