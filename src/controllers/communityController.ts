@@ -211,6 +211,28 @@ export const reactToPost = async (req: Request, res: Response) => {
   }
 };
 
+// Get comments for a post
+export const getPostComments = async (req: Request, res: Response) => {
+  try {
+    const { postId } = req.params;
+    
+    const comments = await CommunityComment.find({ postId })
+      .populate('userId', 'username')
+      .sort({ createdAt: 1 });
+    
+    res.json({
+      success: true,
+      comments
+    });
+  } catch (error) {
+    logger.error('Error fetching comments:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch comments'
+    });
+  }
+};
+
 // Create a comment
 export const createComment = async (req: Request, res: Response) => {
   try {

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getCommunityStats = exports.getDailyPrompts = exports.joinChallenge = exports.getActiveChallenges = exports.createComment = exports.reactToPost = exports.createPost = exports.getSpacePosts = exports.getCommunitySpaces = void 0;
+exports.getCommunityStats = exports.getDailyPrompts = exports.joinChallenge = exports.getActiveChallenges = exports.createComment = exports.getPostComments = exports.reactToPost = exports.createPost = exports.getSpacePosts = exports.getCommunitySpaces = void 0;
 const mongoose_1 = require("mongoose");
 const communityModeration_1 = require("../middleware/communityModeration");
 const logger_1 = require("../utils/logger");
@@ -188,6 +188,27 @@ const reactToPost = async (req, res) => {
     }
 };
 exports.reactToPost = reactToPost;
+// Get comments for a post
+const getPostComments = async (req, res) => {
+    try {
+        const { postId } = req.params;
+        const comments = await Community_1.CommunityComment.find({ postId })
+            .populate('userId', 'username')
+            .sort({ createdAt: 1 });
+        res.json({
+            success: true,
+            comments
+        });
+    }
+    catch (error) {
+        logger_1.logger.error('Error fetching comments:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch comments'
+        });
+    }
+};
+exports.getPostComments = getPostComments;
 // Create a comment
 const createComment = async (req, res) => {
     try {

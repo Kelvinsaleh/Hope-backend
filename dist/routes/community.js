@@ -12,6 +12,7 @@ router.get('/spaces', communityController_1.getCommunitySpaces);
 router.get('/stats', communityController_1.getCommunityStats);
 router.get('/challenges', communityController_1.getActiveChallenges);
 router.get('/prompts', communityController_1.getDailyPrompts);
+router.get('/posts/:postId/comments', communityController_1.getPostComments);
 // Protected routes (auth required)
 router.use(auth_1.authenticateToken);
 // Posts

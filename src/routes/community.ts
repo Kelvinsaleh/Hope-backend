@@ -6,6 +6,7 @@ import {
   createPost,
   reactToPost,
   createComment,
+  getPostComments,
   getActiveChallenges,
   joinChallenge,
   getDailyPrompts,
@@ -19,6 +20,7 @@ router.get('/spaces', getCommunitySpaces);
 router.get('/stats', getCommunityStats);
 router.get('/challenges', getActiveChallenges);
 router.get('/prompts', getDailyPrompts);
+router.get('/posts/:postId/comments', getPostComments);
 
 // Protected routes (auth required)
 router.use(authenticateToken);
