@@ -28,6 +28,7 @@ import playlistRoutes from './routes/playlist';
 import userRoutes from './routes/user';
 import cbtRoutes from './routes/cbt';
 import cleanupRoutes from './routes/cleanup';
+import apiRoutes from './routes/index';
 import { connectDB } from './utils/db';
 import { healthCheck, readinessCheck, keepAlive } from './controllers/healthController';
 
@@ -142,6 +143,7 @@ app.get("/ready", readinessCheck);
 app.get("/keepalive", keepAlive);
 
 // API routes
+app.use('/', apiRoutes);
 app.use("/auth", authRoutes);
 app.use("/chat", chatRoutes);
 app.use("/memory-enhanced-chat", memoryEnhancedChatRoutes);
