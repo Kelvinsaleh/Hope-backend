@@ -207,7 +207,7 @@ exports.uploadMeditation = uploadMeditation;
 // Generate automatic headers using AI
 const generateHeaders = async (title, description, audioUrl) => {
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const prompt = `Generate 5-7 section headers for a meditation titled "${title}" with description "${description}". 
     Return as JSON array: ["Header 1", "Header 2", ...]`;
         const result = await model.generateContent(prompt);
@@ -222,7 +222,7 @@ const generateHeaders = async (title, description, audioUrl) => {
 // Generate automatic subtitles using AI
 const generateSubtitles = async (audioUrl, duration) => {
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const prompt = `Generate subtitles for a ${duration}-minute meditation. 
     Return as JSON array of objects: [{"time": "00:00", "text": "Welcome to this meditation"}, ...]`;
         const result = await model.generateContent(prompt);
