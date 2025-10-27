@@ -15,13 +15,39 @@ async function isPremiumUser(userId) {
     });
     return !!subscription;
 }
-// Get all community spaces
+// Get all community spaces with member counts and activity
 const getCommunitySpaces = async (req, res) => {
     try {
         const spaces = await Community_1.CommunitySpace.find({ isActive: true }).sort({ name: 1 });
+        // Get member counts and latest posts for each space
+        const spacesWithStats = await Promise.all(spaces.map(async (space) => {
+            // Get unique members in this space
+            const uniqueMembers = await Community_1.CommunityPost.distinct('userId', { spaceId: space._id });
+            // Get latest post for preview
+            const latestPost = await Community_1.CommunityPost.findOne({ spaceId: space._id })
+                .populate('userId', 'username')
+                .sort({ createdAt: -1 });
+            // Get total posts in this space
+            const postCount = await Community_1.CommunityPost.countDocuments({ spaceId: space._id });
+            // Extract username safely
+            const username = latestPost && !latestPost.isAnonymous && latestPost.userId
+                ? latestPost.userId.username || 'Anonymous'
+                : 'Anonymous';
+            return {
+                ...space.toObject(),
+                memberCount: uniqueMembers.length,
+                postCount,
+                latestPost: latestPost ? {
+                    _id: latestPost._id,
+                    content: latestPost.content.substring(0, 100) + (latestPost.content.length > 100 ? '...' : ''),
+                    username,
+                    createdAt: latestPost.createdAt
+                } : null
+            };
+        }));
         res.json({
             success: true,
-            spaces
+            spaces: spacesWithStats
         });
     }
     catch (error) {
