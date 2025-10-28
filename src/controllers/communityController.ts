@@ -234,7 +234,10 @@ export const getPostComments = async (req: Request, res: Response) => {
   try {
     const { postId } = req.params;
     
-    const comments = await CommunityComment.find({ postId })
+    // Convert postId to ObjectId
+    const postObjectId = new Types.ObjectId(postId);
+    
+    const comments = await CommunityComment.find({ postId: postObjectId })
       .populate('userId', 'username')
       .sort({ createdAt: 1 });
     
@@ -257,15 +260,10 @@ export const createComment = async (req: Request, res: Response) => {
     const userId = new Types.ObjectId(req.user._id);
     const { postId, content, isAnonymous } = req.body;
     
-    // Check premium access for commenting
-    const hasPremium = await isPremiumUser(userId);
-    if (!hasPremium) {
-      return res.status(403).json({
-        success: false,
-        error: 'Premium subscription required to comment',
-        upgradeRequired: true
-      });
-    }
+    // Convert postId to ObjectId
+    const postObjectId = new Types.ObjectId(postId);
+    
+    // Comments are free for all authenticated users
     
     // Moderate content
     const moderation = await CommunityModeration.moderateContent(content);
@@ -281,7 +279,7 @@ export const createComment = async (req: Request, res: Response) => {
     }
     
     const comment = new CommunityComment({
-      postId,
+      postId: postObjectId,
       userId,
       content,
       isAnonymous: isAnonymous || false,
@@ -291,7 +289,7 @@ export const createComment = async (req: Request, res: Response) => {
     await comment.save();
     
     // Add comment to post
-    await CommunityPost.findByIdAndUpdate(postId, {
+    await CommunityPost.findByIdAndUpdate(postObjectId, {
       $push: { comments: comment._id }
     });
     

@@ -209,7 +209,9 @@ exports.reactToPost = reactToPost;
 const getPostComments = async (req, res) => {
     try {
         const { postId } = req.params;
-        const comments = await Community_1.CommunityComment.find({ postId })
+        // Convert postId to ObjectId
+        const postObjectId = new mongoose_1.Types.ObjectId(postId);
+        const comments = await Community_1.CommunityComment.find({ postId: postObjectId })
             .populate('userId', 'username')
             .sort({ createdAt: 1 });
         res.json({
@@ -231,15 +233,9 @@ const createComment = async (req, res) => {
     try {
         const userId = new mongoose_1.Types.ObjectId(req.user._id);
         const { postId, content, isAnonymous } = req.body;
-        // Check premium access for commenting
-        const hasPremium = await isPremiumUser(userId);
-        if (!hasPremium) {
-            return res.status(403).json({
-                success: false,
-                error: 'Premium subscription required to comment',
-                upgradeRequired: true
-            });
-        }
+        // Convert postId to ObjectId
+        const postObjectId = new mongoose_1.Types.ObjectId(postId);
+        // Comments are free for all authenticated users
         // Moderate content
         const moderation = await communityModeration_1.CommunityModeration.moderateContent(content);
         if (!moderation.isSafe) {
@@ -253,7 +249,7 @@ const createComment = async (req, res) => {
             });
         }
         const comment = new Community_1.CommunityComment({
-            postId,
+            postId: postObjectId,
             userId,
             content,
             isAnonymous: isAnonymous || false,
@@ -261,7 +257,7 @@ const createComment = async (req, res) => {
         });
         await comment.save();
         // Add comment to post
-        await Community_1.CommunityPost.findByIdAndUpdate(postId, {
+        await Community_1.CommunityPost.findByIdAndUpdate(postObjectId, {
             $push: { comments: comment._id }
         });
         await comment.populate('userId', 'username');
