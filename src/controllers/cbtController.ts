@@ -276,10 +276,10 @@ Journal: "${text}"
 Mood: ${mood || 'Not specified'}/6
 
 Respond with a JSON array of 3-5 short insights (1-2 sentences each). Focus on:
-- Recognizing emotional patterns
-- Offering gentle encouragement
-- Suggesting helpful coping strategies
-- Acknowledging their feelings
+- Recognizing emotional patterns with warmth
+- Offering gentle encouragement like a supportive friend
+- Suggesting helpful coping strategies naturally
+- Acknowledging their feelings genuinely
 
 Format: ["insight 1", "insight 2", "insight 3"]
 
@@ -307,7 +307,7 @@ Provide a JSON response with:
 1. copingStrategies: Array of 4-6 brief, actionable coping strategies
 2. urgency: "immediate", "moderate", or "routine"
 3. suggestedActivities: Array of 3-5 simple activities
-4. supportiveMessage: A simple, genuine message (2-3 sentences, 30-40 words max). Talk like a real person, not a therapist. No clichés.
+4. supportiveMessage: A simple, genuine message (2-3 sentences, 30-40 words max). Talk like a supportive friend, not a therapist. Be warm and conversational.
 
 Format as valid JSON only. Keep supportiveMessage natural and real.`;
     } else if (type === 'general_insights') {

@@ -245,21 +245,21 @@ function generateFallbackResponse(aiContext: string): string {
   const messageMatch = aiContext.match(/User message: "([^"]+)"/);
   const userMessage = messageMatch ? messageMatch[1].toLowerCase() : '';
   
-  // Generate contextual fallback responses
+  // Generate contextual fallback responses with conversational tone
   if (userMessage.includes('help') || userMessage.includes('support')) {
-    return "I'm having technical trouble right now, but your feelings matter. If you need support urgently, reach out to someone you trust or a crisis helpline. I'll be back soon.";
+    return "I'm having some technical trouble right now, but your feelings matter. If you need support urgently, reach out to someone you trust or a crisis helpline. I'll be back soon.";
   }
   
   if (userMessage.includes('anxious') || userMessage.includes('anxiety')) {
-    return "I'm having technical issues, but anxiety is real and it passes. Try slow breaths or grounding yourself with what you can see and touch around you. Take it moment by moment.";
+    return "I'm having technical issues, but anxiety is real and it does pass. Maybe try some slow breaths or grounding yourself with what you can see and touch around you. Take it moment by moment.";
   }
   
   if (userMessage.includes('sad') || userMessage.includes('depressed') || userMessage.includes('down')) {
-    return "I'm having some technical trouble connecting right now. Whatever you're feeling is real and valid. Do something small that feels safe — reach out to someone, take a walk, or just rest. You don't have to push through alone.";
+    return "I'm having some technical trouble connecting right now. Whatever you're feeling is real and valid. Maybe do something small that feels safe — reach out to someone, take a walk, or just rest. You don't have to push through alone.";
   }
   
   if (userMessage.includes('stress') || userMessage.includes('overwhelmed')) {
-    return "I'm experiencing technical difficulties, but it sounds like there's a lot on you right now. Try breaking one thing into smaller pieces, or just pause and breathe. It's okay to step back.";
+    return "I'm experiencing technical difficulties, but it sounds like there's a lot on you right now. Maybe try breaking one thing into smaller pieces, or just pause and breathe. It's okay to step back.";
   }
   
   // Default fallback response

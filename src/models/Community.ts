@@ -16,6 +16,7 @@ export interface ICommunityPost extends Document {
   content: string;
   mood?: string;
   isAnonymous: boolean;
+  images?: string[]; // Array of image URLs from Vercel Blob
   reactions: {
     heart: mongoose.Types.ObjectId[];
     support: mongoose.Types.ObjectId[];
@@ -24,6 +25,8 @@ export interface ICommunityPost extends Document {
   comments: mongoose.Types.ObjectId[];
   aiReflection?: string;
   isModerated: boolean;
+  isDeleted: boolean;
+  deletedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -33,11 +36,15 @@ export interface ICommunityComment extends Document {
   userId: mongoose.Types.ObjectId;
   content: string;
   isAnonymous: boolean;
+  parentCommentId?: mongoose.Types.ObjectId; // For nested replies
+  images?: string[]; // Array of image URLs from Vercel Blob
   reactions: {
     heart: mongoose.Types.ObjectId[];
     support: mongoose.Types.ObjectId[];
   };
   isModerated: boolean;
+  isDeleted: boolean;
+  deletedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -91,6 +98,7 @@ const CommunityPostSchema = new Schema<ICommunityPost>({
   content: { type: String, required: true, maxlength: 500 },
   mood: { type: String },
   isAnonymous: { type: Boolean, default: false },
+  images: [{ type: String }], // Array of image URLs
   reactions: {
     heart: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     support: [{ type: Schema.Types.ObjectId, ref: 'User' }],
@@ -98,7 +106,9 @@ const CommunityPostSchema = new Schema<ICommunityPost>({
   },
   comments: [{ type: Schema.Types.ObjectId, ref: 'CommunityComment' }],
   aiReflection: { type: String },
-  isModerated: { type: Boolean, default: false }
+  isModerated: { type: Boolean, default: false },
+  isDeleted: { type: Boolean, default: false },
+  deletedAt: { type: Date }
 }, {
   timestamps: true
 });
@@ -109,11 +119,15 @@ const CommunityCommentSchema = new Schema<ICommunityComment>({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   content: { type: String, required: true, maxlength: 300 },
   isAnonymous: { type: Boolean, default: false },
+  parentCommentId: { type: Schema.Types.ObjectId, ref: 'CommunityComment' }, // For nested replies
+  images: [{ type: String }], // Array of image URLs
   reactions: {
     heart: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     support: [{ type: Schema.Types.ObjectId, ref: 'User' }]
   },
-  isModerated: { type: Boolean, default: false }
+  isModerated: { type: Boolean, default: false },
+  isDeleted: { type: Boolean, default: false },
+  deletedAt: { type: Date }
 }, {
   timestamps: true
 });
@@ -152,7 +166,10 @@ const CommunityPromptSchema = new Schema<ICommunityPrompt>({
 // Indexes for performance
 CommunityPostSchema.index({ spaceId: 1, createdAt: -1 });
 CommunityPostSchema.index({ userId: 1, createdAt: -1 });
+CommunityPostSchema.index({ isDeleted: 1 });
 CommunityCommentSchema.index({ postId: 1, createdAt: 1 });
+CommunityCommentSchema.index({ parentCommentId: 1, createdAt: 1 });
+CommunityCommentSchema.index({ isDeleted: 1 });
 
 export const CommunitySpace = mongoose.model<ICommunitySpace>('CommunitySpace', CommunitySpaceSchema);
 export const CommunityPost = mongoose.model<ICommunityPost>('CommunityPost', CommunityPostSchema);

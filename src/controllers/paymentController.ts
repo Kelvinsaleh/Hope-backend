@@ -21,18 +21,18 @@ const PLANS: PaymentPlan[] = [
   {
     id: 'monthly',
     name: 'Monthly Plan',
-    price: 7.99,
+    price: 1300,
     currency: 'KES',
     interval: 'monthly',
-    paystackPlanCode: 'PLN_monthly_premium'
+    paystackPlanCode: process.env.PAYSTACK_MONTHLY_PLAN_CODE || 'PLN_monthly_premium'
   },
   {
     id: 'annually',
     name: 'Annual Plan',
-    price: 79.99,
+    price: 13000,
     currency: 'KES',
     interval: 'annually',
-    paystackPlanCode: 'PLN_annual_premium'
+    paystackPlanCode: process.env.PAYSTACK_ANNUAL_PLAN_CODE || 'PLN_annual_premium'
   }
 ];
 

@@ -11,7 +11,10 @@ import {
   joinChallenge,
   getDailyPrompts,
   getCommunityStats,
-  getRecentActivity
+  getRecentActivity,
+  deletePost,
+  deleteComment,
+  saveImageMetadata
 } from '../controllers/communityController';
 
 const router = express.Router();
@@ -31,9 +34,14 @@ router.use(authenticateToken);
 router.get('/spaces/:spaceId/posts', getSpacePosts);
 router.post('/posts', createPost);
 router.post('/posts/:postId/react', reactToPost);
+router.delete('/posts/:postId', deletePost);
 
 // Comments
 router.post('/comments', createComment);
+router.delete('/comments/:commentId', deleteComment);
+
+// Images
+router.post('/images', saveImageMetadata);
 
 // Challenges
 router.post('/challenges/:challengeId/join', joinChallenge);

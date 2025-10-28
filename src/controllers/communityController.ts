@@ -79,7 +79,10 @@ export const getSpacePosts = async (req: Request, res: Response) => {
     
     const skip = (Number(page) - 1) * Number(limit);
     
-    const posts = await CommunityPost.find({ spaceId })
+    const posts = await CommunityPost.find({ 
+      spaceId, 
+      isDeleted: false 
+    })
       .populate('userId', 'username')
       .populate('comments')
       .sort({ createdAt: -1 })
@@ -108,7 +111,7 @@ export const getSpacePosts = async (req: Request, res: Response) => {
 export const createPost = async (req: Request, res: Response) => {
   try {
     const userId = new Types.ObjectId(req.user._id);
-    let { spaceId, content, mood, isAnonymous } = req.body;
+    let { spaceId, content, mood, isAnonymous, images } = req.body;
     
     // Validate spaceId
     if (!spaceId || spaceId.trim() === '') {
@@ -157,6 +160,7 @@ export const createPost = async (req: Request, res: Response) => {
       content,
       mood,
       isAnonymous: isAnonymous || false,
+      images: images || [],
       isModerated: !moderation.isSafe
     });
     
@@ -237,13 +241,35 @@ export const getPostComments = async (req: Request, res: Response) => {
     // Convert postId to ObjectId
     const postObjectId = new Types.ObjectId(postId);
     
-    const comments = await CommunityComment.find({ postId: postObjectId })
+    // Get top-level comments (no parentCommentId) and their replies
+    const topLevelComments = await CommunityComment.find({ 
+      postId: postObjectId, 
+      parentCommentId: { $exists: false },
+      isDeleted: false 
+    })
       .populate('userId', 'username')
       .sort({ createdAt: 1 });
     
+    // Get replies for each top-level comment
+    const commentsWithReplies = await Promise.all(
+      topLevelComments.map(async (comment) => {
+        const replies = await CommunityComment.find({
+          parentCommentId: comment._id,
+          isDeleted: false
+        })
+          .populate('userId', 'username')
+          .sort({ createdAt: 1 });
+        
+        return {
+          ...comment.toObject(),
+          replies
+        };
+      })
+    );
+    
     res.json({
       success: true,
-      comments
+      comments: commentsWithReplies
     });
   } catch (error) {
     logger.error('Error fetching comments:', error);
@@ -258,7 +284,7 @@ export const getPostComments = async (req: Request, res: Response) => {
 export const createComment = async (req: Request, res: Response) => {
   try {
     const userId = new Types.ObjectId(req.user._id);
-    const { postId, content, isAnonymous } = req.body;
+    const { postId, content, isAnonymous, parentCommentId, images } = req.body;
     
     // Convert postId to ObjectId
     const postObjectId = new Types.ObjectId(postId);
@@ -283,6 +309,8 @@ export const createComment = async (req: Request, res: Response) => {
       userId,
       content,
       isAnonymous: isAnonymous || false,
+      parentCommentId: parentCommentId ? new Types.ObjectId(parentCommentId) : undefined,
+      images: images || [],
       isModerated: !moderation.isSafe
     });
     
@@ -532,9 +560,9 @@ export const getRecentActivity = async (req: Request, res: Response) => {
 // Get community stats
 export const getCommunityStats = async (req: Request, res: Response) => {
   try {
-    const totalPosts = await CommunityPost.countDocuments();
-    const totalComments = await CommunityComment.countDocuments();
-    const activeUserIds = await CommunityPost.distinct('userId');
+    const totalPosts = await CommunityPost.countDocuments({ isDeleted: false });
+    const totalComments = await CommunityComment.countDocuments({ isDeleted: false });
+    const activeUserIds = await CommunityPost.distinct('userId', { isDeleted: false });
     const activeUsers = activeUserIds.length;
     
     res.json({
@@ -551,6 +579,116 @@ export const getCommunityStats = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch community stats'
+    });
+  }
+};
+
+// Delete a post (soft delete)
+export const deletePost = async (req: Request, res: Response) => {
+  try {
+    const userId = new Types.ObjectId(req.user._id);
+    const { postId } = req.params;
+    
+    const post = await CommunityPost.findById(postId);
+    if (!post) {
+      return res.status(404).json({
+        success: false,
+        error: 'Post not found'
+      });
+    }
+    
+    // Check if user owns the post
+    if (!post.userId.equals(userId)) {
+      return res.status(403).json({
+        success: false,
+        error: 'You can only delete your own posts'
+      });
+    }
+    
+    // Soft delete the post
+    post.isDeleted = true;
+    post.deletedAt = new Date();
+    await post.save();
+    
+    res.json({
+      success: true,
+      message: 'Post deleted successfully'
+    });
+  } catch (error) {
+    logger.error('Error deleting post:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete post'
+    });
+  }
+};
+
+// Delete a comment (soft delete)
+export const deleteComment = async (req: Request, res: Response) => {
+  try {
+    const userId = new Types.ObjectId(req.user._id);
+    const { commentId } = req.params;
+    
+    const comment = await CommunityComment.findById(commentId);
+    if (!comment) {
+      return res.status(404).json({
+        success: false,
+        error: 'Comment not found'
+      });
+    }
+    
+    // Check if user owns the comment
+    if (!comment.userId.equals(userId)) {
+      return res.status(403).json({
+        success: false,
+        error: 'You can only delete your own comments'
+      });
+    }
+    
+    // Soft delete the comment
+    comment.isDeleted = true;
+    comment.deletedAt = new Date();
+    await comment.save();
+    
+    res.json({
+      success: true,
+      message: 'Comment deleted successfully'
+    });
+  } catch (error) {
+    logger.error('Error deleting comment:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete comment'
+    });
+  }
+};
+
+// Save image metadata
+export const saveImageMetadata = async (req: Request, res: Response) => {
+  try {
+    const { url, filename, contentType, size, postId, commentId, uploadedAt } = req.body;
+    
+    // For now, we'll just log the metadata
+    // In a production system, you might want to store this in a separate collection
+    logger.info('Image uploaded:', {
+      url,
+      filename,
+      contentType,
+      size,
+      postId,
+      commentId,
+      uploadedAt
+    });
+    
+    res.json({
+      success: true,
+      message: 'Image metadata saved'
+    });
+  } catch (error) {
+    logger.error('Error saving image metadata:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to save image metadata'
     });
   }
 };
