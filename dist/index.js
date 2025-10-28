@@ -35,6 +35,8 @@ const cleanup_1 = __importDefault(require("./routes/cleanup"));
 const index_1 = __importDefault(require("./routes/index"));
 const db_1 = require("./utils/db");
 const healthController_1 = require("./controllers/healthController");
+const seedCommunity_1 = __importDefault(require("./scripts/seedCommunity"));
+const Community_1 = require("./models/Community");
 // Load environment variables
 dotenv_1.default.config();
 const app = (0, express_1.default)();
@@ -188,9 +190,28 @@ process.on('SIGINT', () => {
     logger_1.logger.info('SIGINT received, shutting down gracefully');
     process.exit(0);
 });
+// Auto-seed function
+const autoSeedCommunity = async () => {
+    try {
+        const spaceCount = await Community_1.CommunitySpace.countDocuments();
+        if (spaceCount < 16) {
+            logger_1.logger.info('🌿 Community spaces not found or incomplete. Seeding automatically...');
+            await (0, seedCommunity_1.default)();
+            logger_1.logger.info('✅ Community spaces automatically seeded successfully!');
+        }
+        else {
+            logger_1.logger.info(`✅ Community spaces already exist (${spaceCount} spaces)`);
+        }
+    }
+    catch (error) {
+        logger_1.logger.error('Error auto-seeding community spaces:', error);
+    }
+};
 // Start server
 (0, db_1.connectDB)()
-    .then(() => {
+    .then(async () => {
+    // Auto-seed community spaces on startup
+    await autoSeedCommunity();
     app.listen(PORT, () => {
         logger_1.logger.info(`🚀 Server is running on port ${PORT}`);
         logger_1.logger.info(`📊 Health check: http://localhost:${PORT}/health`);

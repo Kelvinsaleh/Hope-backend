@@ -31,6 +31,8 @@ import cleanupRoutes from './routes/cleanup';
 import apiRoutes from './routes/index';
 import { connectDB } from './utils/db';
 import { healthCheck, readinessCheck, keepAlive } from './controllers/healthController';
+import seedCommunityData from './scripts/seedCommunity';
+import { CommunitySpace } from './models/Community';
 
 // Load environment variables
 dotenv.config();
@@ -208,9 +210,28 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
+// Auto-seed function
+const autoSeedCommunity = async () => {
+  try {
+    const spaceCount = await CommunitySpace.countDocuments();
+    if (spaceCount < 16) {
+      logger.info('🌿 Community spaces not found or incomplete. Seeding automatically...');
+      await seedCommunityData();
+      logger.info('✅ Community spaces automatically seeded successfully!');
+    } else {
+      logger.info(`✅ Community spaces already exist (${spaceCount} spaces)`);
+    }
+  } catch (error) {
+    logger.error('Error auto-seeding community spaces:', error);
+  }
+};
+
 // Start server
 connectDB()
-  .then(() => {
+  .then(async () => {
+    // Auto-seed community spaces on startup
+    await autoSeedCommunity();
+    
     app.listen(PORT, () => {
       logger.info(`🚀 Server is running on port ${PORT}`);
       logger.info(`📊 Health check: http://localhost:${PORT}/health`);
