@@ -141,6 +141,29 @@ export const createPost = async (req: Request, res: Response) => {
       });
     }
     
+    // Validate content length: max 2000 words
+    const wordCount = (content || '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean).length;
+    if (wordCount === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Post content cannot be empty'
+      });
+    }
+    if (wordCount > 2000) {
+      return res.status(400).json({
+        success: false,
+        error: 'Post exceeds the 2000-word limit'
+      });
+    }
+
+    // Enforce max 6 images
+    if (Array.isArray(images) && images.length > 6) {
+      images = images.slice(0, 6);
+    }
+
     // Moderate content
     const moderation = await CommunityModeration.moderateContent(content);
     if (!moderation.isSafe) {

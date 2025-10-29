@@ -38,11 +38,11 @@ export async function enforceChatDailyLimit(req: Request, res: Response, next: N
       { $count: "count" },
     ]);
     const todayCount = sessions?.[0]?.count || 0;
-    if (todayCount >= 1) {
+    if (todayCount >= 30) {
       return res.status(429).json({
         success: false,
         error: "Daily chat limit reached for free plan. Upgrade to Premium for unlimited chats.",
-        limits: { dailyChats: 1 },
+        limits: { dailyChats: 30 },
       });
     }
     next();
