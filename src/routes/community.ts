@@ -15,7 +15,8 @@ import {
   deletePost,
   deleteComment,
   saveImageMetadata,
-  sharePost
+  sharePost,
+  getFeed
 } from '../controllers/communityController';
 
 const router = express.Router();
@@ -27,6 +28,7 @@ router.get('/challenges', getActiveChallenges);
 router.get('/prompts', getDailyPrompts);
 router.get('/activity', getRecentActivity);
 router.get('/posts/:postId/comments', getPostComments);
+router.get('/feed', getFeed);
 
 // Protected routes (auth required)
 router.use(authenticateToken);

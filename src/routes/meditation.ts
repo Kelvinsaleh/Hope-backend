@@ -27,7 +27,7 @@ const router = express.Router();
 // Configure multer for file uploads
 const upload = multer({ 
   storage: multer.memoryStorage(),
-  limits: { fileSize: 200 * 1024 * 1024 } // 200MB limit for longer meditations
+  limits: { fileSize: 500 * 1024 * 1024 } // 500MB limit for longer meditations
 });
 
 // Public routes

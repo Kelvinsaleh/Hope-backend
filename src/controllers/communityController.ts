@@ -606,6 +606,66 @@ export const getCommunityStats = async (req: Request, res: Response) => {
   }
 };
 
+// Lightweight global feed (fast): latest posts with minimal fields and counts
+export const getFeed = async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(Number((req.query.limit as string) || 20), 50);
+
+    const posts = await CommunityPost.aggregate([
+      { $match: { isDeleted: false } },
+      { $sort: { createdAt: -1 } },
+      { $limit: limit },
+      // project minimal fields plus counts
+      {
+        $project: {
+          userId: 1,
+          spaceId: 1,
+          content: 1,
+          mood: 1,
+          isAnonymous: 1,
+          images: 1,
+          aiReflection: 1,
+          createdAt: 1,
+          reactions: 1,
+          commentCount: { $size: { $ifNull: ["$comments", []] } },
+        }
+      },
+      // user lookup (minimal)
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userId',
+          foreignField: '_id',
+          as: 'user'
+        }
+      },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          userId: {
+            _id: '$user._id',
+            username: '$user.username'
+          },
+          spaceId: 1,
+          content: 1,
+          mood: 1,
+          isAnonymous: 1,
+          images: 1,
+          aiReflection: 1,
+          createdAt: 1,
+          reactions: 1,
+          commentCount: 1,
+        }
+      },
+    ]);
+
+    return res.json({ success: true, posts });
+  } catch (error) {
+    logger.error('Error fetching feed:', error);
+    return res.status(500).json({ success: false, error: 'Failed to fetch feed' });
+  }
+};
+
 // Delete a post (soft delete)
 export const deletePost = async (req: Request, res: Response) => {
   try {
