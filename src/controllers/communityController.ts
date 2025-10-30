@@ -686,6 +686,23 @@ export const deleteComment = async (req: Request, res: Response) => {
   }
 };
 
+// Share a post (increments share counter)
+export const sharePost = async (req: Request, res: Response) => {
+  try {
+    const { postId } = req.params;
+    const post = await CommunityPost.findById(postId);
+    if (!post) {
+      return res.status(404).json({ success: false, error: 'Post not found' });
+    }
+    post.shareCount = (post.shareCount || 0) + 1;
+    await post.save();
+    return res.json({ success: true, shareCount: post.shareCount });
+  } catch (error) {
+    logger.error('Error sharing post:', error);
+    return res.status(500).json({ success: false, error: 'Failed to share post' });
+  }
+};
+
 // Save image metadata
 export const saveImageMetadata = async (req: Request, res: Response) => {
   try {

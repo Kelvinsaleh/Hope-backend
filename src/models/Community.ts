@@ -25,6 +25,7 @@ export interface ICommunityPost extends Document {
   comments: mongoose.Types.ObjectId[];
   aiReflection?: string;
   isModerated: boolean;
+  shareCount?: number;
   isDeleted: boolean;
   deletedAt?: Date;
   createdAt: Date;
@@ -107,6 +108,7 @@ const CommunityPostSchema = new Schema<ICommunityPost>({
   comments: [{ type: Schema.Types.ObjectId, ref: 'CommunityComment' }],
   aiReflection: { type: String },
   isModerated: { type: Boolean, default: false },
+  shareCount: { type: Number, default: 0 },
   isDeleted: { type: Boolean, default: false },
   deletedAt: { type: Date }
 }, {

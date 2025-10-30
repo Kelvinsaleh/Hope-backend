@@ -14,7 +14,8 @@ import {
   getRecentActivity,
   deletePost,
   deleteComment,
-  saveImageMetadata
+  saveImageMetadata,
+  sharePost
 } from '../controllers/communityController';
 
 const router = express.Router();
@@ -34,6 +35,7 @@ router.use(authenticateToken);
 router.get('/spaces/:spaceId/posts', getSpacePosts);
 router.post('/posts', createPost);
 router.post('/posts/:postId/react', reactToPost);
+router.post('/posts/:postId/share', sharePost);
 router.delete('/posts/:postId', deletePost);
 
 // Comments
