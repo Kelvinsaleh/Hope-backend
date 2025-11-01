@@ -190,13 +190,15 @@ export const uploadMeditation = async (req: Request, res: Response) => {
     
     // Upload to Vercel Blob (modern API)
     const pathname = `meditations/${Date.now()}_${req.file.originalname.replace(/\s+/g, '_')}`;
-    const blob = await put({
+    const blob = await put(
       pathname,
-      data: req.file.buffer,
-      access: 'public',
-      contentType: req.file.mimetype,
-      token: process.env.BLOB_READ_WRITE_TOKEN
-    });
+      req.file.buffer,
+      {
+        access: 'public',
+        contentType: req.file.mimetype,
+        token: process.env.BLOB_READ_WRITE_TOKEN
+      }
+    );
     
     // Generate automatic headers and subtitles using AI
     const headers = await generateHeaders(title, description, blob.url);
