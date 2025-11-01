@@ -230,7 +230,7 @@ export const sendMessage = async (req: Request, res: Response) => {
         }
         
         // Build the mood-adaptive Hope prompt with emotional intelligence
-        const enhancedPrompt = buildHopePrompt(currentUserMood, conversationHistory + `\n\nUser: ${message}`, userContext);
+        const enhancedPrompt = buildHopePrompt(currentUserMood, conversationHistory + `\n\nUser: ${message}`, userContext + '\nRespond concisely in 2-4 lines unless the user asks for step-by-step or the situation clearly requires more detail.');
 
         logger.info("Sending request to Gemini AI...");
         logger.info(`Prompt length: ${enhancedPrompt.length} characters`);

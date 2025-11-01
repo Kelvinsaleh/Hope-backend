@@ -331,7 +331,7 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
       .join('\n');
 
     // Use the mood-adaptive Hope prompt builder
-    const hopePrompt = buildHopePrompt(currentMood, conversationHistory + `\n\nUser: ${message}`, userContext);
+    const hopePrompt = buildHopePrompt(currentMood, conversationHistory + `\n\nUser: ${message}`, `${userContext}\nRespond concisely in 2-4 lines unless the user asks for step-by-step or the situation clearly requires more detail.`);
     logger.info(`AI context created, length: ${hopePrompt.length}`);
 
     // Generate AI response using queue system for better quota management
