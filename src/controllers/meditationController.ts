@@ -188,8 +188,11 @@ export const uploadMeditation = async (req: Request, res: Response) => {
     
     const { title, description, duration, category } = req.body;
     
-    // Upload to Vercel Blob
-    const blob = await put(req.file.filename, req.file.buffer, {
+    // Upload to Vercel Blob (modern API)
+    const pathname = `meditations/${Date.now()}_${req.file.originalname.replace(/\s+/g, '_')}`;
+    const blob = await put({
+      pathname,
+      data: req.file.buffer,
       access: 'public',
       contentType: req.file.mimetype,
       token: process.env.BLOB_READ_WRITE_TOKEN
