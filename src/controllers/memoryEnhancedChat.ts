@@ -307,9 +307,32 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
     // Gather user memory data
     const memoryData = await gatherUserMemory(userId);
 
-    // Create context for AI
-    const aiContext = createAIContext(message, memoryData, user, context);
-    logger.info(`AI context created, length: ${aiContext.length}`);
+    // Determine current mood from most recent mood data
+    const currentMood = memoryData.moodPatterns.length > 0 
+      ? normalizeMood(memoryData.moodPatterns[0].mood) 
+      : 'neutral';
+
+    // Build user context string
+    let userContext = `\n**What you know about ${user.name || 'this person'}:**\n`;
+    userContext += `- ${memoryData.journalEntries.length} journal entries recently\n`;
+    userContext += `- ${memoryData.moodPatterns.length} mood records (recent mood: ${memoryData.moodPatterns[0]?.mood || 'unknown'}/10)\n`;
+    userContext += `- ${memoryData.meditationHistory.length} meditation sessions completed\n`;
+    userContext += `- ${memoryData.therapySessions.length} previous therapy chats\n`;
+
+    // Add recent journal insights if available
+    if (memoryData.journalEntries.length > 0) {
+      userContext += `\n**Recent journal themes:** ${memoryData.insights.slice(0, 3).join(', ') || 'general reflection'}\n`;
+    }
+
+    // Build conversation history from memory
+    const conversationHistory = memoryData.therapySessions
+      .slice(-3)
+      .map(session => `Previous session: [${session.date}]`)
+      .join('\n');
+
+    // Use the mood-adaptive Hope prompt builder
+    const hopePrompt = buildHopePrompt(currentMood, conversationHistory + `\n\nUser: ${message}`, userContext);
+    logger.info(`AI context created, length: ${hopePrompt.length}`);
 
     // Generate AI response using queue system for better quota management
     logger.info(`Requesting AI response through queue system...`);
@@ -317,12 +340,12 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
     let isFailover = false;
     
     try {
-      aiMessage = await generateQueuedAIResponse(aiContext);
+      aiMessage = await generateQueuedAIResponse(hopePrompt);
       logger.info(`AI response generated successfully, length: ${aiMessage.length}`);
     } catch (error: any) {
       // If AI completely fails, use fallback
       logger.error(`AI generation failed completely:`, error.message);
-      aiMessage = generateFallbackResponse(aiContext);
+      aiMessage = generateFallbackResponse(hopePrompt);
       isFailover = true;
       logger.info(`Using fallback response`);
     }
@@ -451,39 +474,6 @@ async function gatherUserMemory(userId: string): Promise<UserMemory> {
       lastUpdated: new Date(),
     };
   }
-}
-
-function createAIContext(
-  message: string,
-  memoryData: UserMemory,
-  user: any,
-  additionalContext?: any
-): string {
-  // Determine current mood from most recent mood data
-  const currentMood = memoryData.moodPatterns.length > 0 
-    ? normalizeMood(memoryData.moodPatterns[0].mood) 
-    : 'neutral';
-
-  // Build user context string
-  let userContext = `\n**What you know about ${user.name || 'this person'}:**\n`;
-  userContext += `- ${memoryData.journalEntries.length} journal entries recently\n`;
-  userContext += `- ${memoryData.moodPatterns.length} mood records (recent mood: ${memoryData.moodPatterns[0]?.mood || 'unknown'}/10)\n`;
-  userContext += `- ${memoryData.meditationHistory.length} meditation sessions completed\n`;
-  userContext += `- ${memoryData.therapySessions.length} previous therapy chats\n`;
-
-  // Add recent journal insights if available
-  if (memoryData.journalEntries.length > 0) {
-    userContext += `\n**Recent journal themes:** ${memoryData.insights.slice(0, 3).join(', ') || 'general reflection'}\n`;
-  }
-
-  // Build conversation history from memory
-  const conversationHistory = memoryData.therapySessions
-    .slice(-3)
-    .map(session => `Previous session: [${session.date}]`)
-    .join('\n');
-
-  // Use the mood-adaptive Hope prompt builder
-  return buildHopePrompt(currentMood, conversationHistory + `\n\nUser: ${message}`, userContext);
 }
 
 async function generatePersonalizedSuggestions(

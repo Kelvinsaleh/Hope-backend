@@ -3,6 +3,7 @@ import { CBTThoughtRecord } from "../models/CBTThoughtRecord";
 import { CBTActivity } from "../models/CBTActivity";
 import { Mood } from "../models/Mood";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { buildHopePrompt } from '../utils/hopePersonality';
 
 // Initialize Gemini API
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
@@ -324,6 +325,8 @@ Please provide a JSON response with:
 
 Format your response as valid JSON only.`;
     }
+
+    prompt = buildHopePrompt(mood || 'neutral', `Type: ${type || 'N/A'}\nText/Situation: ${text}\nEmotions: ${emotions?.join(', ') || 'N/A'}` , 'CBT Insights flow');
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
