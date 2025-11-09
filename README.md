@@ -176,6 +176,34 @@ INNGEST_SIGNING_KEY=your-inngest-signing-key
 - **Input Validation**: Request validation and sanitization
 - **Rate Limiting**: (Can be added)
 
+## Email Configuration
+
+The backend uses **Resend** for sending password reset and email verification emails.
+
+### Setup Steps
+
+1. **Sign up for Resend**: https://resend.com/
+2. **Get API Key**: https://resend.com/api-keys
+3. **Verify Domain**: Add `ultra-predict.co.ke` at https://resend.com/domains
+4. **Set Environment Variables**:
+   ```bash
+   RESEND_API_KEY=re_your_api_key_here
+   FROM_EMAIL=noreply@ultra-predict.co.ke
+   ```
+
+### Documentation
+
+- **Full Setup Guide**: See `EMAIL_SETUP_GUIDE.md` in project root
+- **Quick Checklist**: See `EMAIL_SETUP_CHECKLIST.md`
+- **Environment Template**: See `env-email-template.txt`
+
+### Email Features
+
+- ✅ Email verification codes
+- ✅ Password reset codes
+- ✅ Welcome emails
+- ✅ Professional HTML email templates
+
 ## Deployment
 
 The backend can be deployed to any Node.js hosting platform:
@@ -185,8 +213,13 @@ The backend can be deployed to any Node.js hosting platform:
 - **DigitalOcean**
 - **AWS**
 - **Google Cloud**
+- **Render** (recommended)
 
-Make sure to set all environment variables in your deployment platform.
+Make sure to set all environment variables in your deployment platform, including:
+- `RESEND_API_KEY`
+- `FROM_EMAIL`
+- Database connection strings
+- JWT secrets
 
 ## Contributing
 

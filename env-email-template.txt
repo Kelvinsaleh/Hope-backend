@@ -1,25 +1,59 @@
 # ========================================
-# ADD THESE LINES TO YOUR .env FILE
+# EMAIL CONFIGURATION FOR ultra-predict.co.ke
 # ========================================
-# Copy and paste these into Hope-backend/.env
-# Then replace the placeholder values with your actual credentials
+# Copy and paste these into your .env file or Render environment variables
+# Replace the placeholder values with your actual credentials
 
-# Email Service Configuration (Required for OTP emails)
-EMAIL_USER=your-email@gmail.com
-EMAIL_PASSWORD=your-16-char-app-password
-EMAIL_HOST=smtp.gmail.com
-EMAIL_PORT=587
-
-# Also update NODE_ENV to production if you haven't already
-NODE_ENV=production
+# Resend Email Service Configuration (Required for password reset & verification emails)
+RESEND_API_KEY=re_your_resend_api_key_here
+FROM_EMAIL=noreply@ultra-predict.co.ke
 
 # ========================================
-# INSTRUCTIONS
+# SETUP INSTRUCTIONS
 # ========================================
-# 1. Get Gmail App Password: https://myaccount.google.com/apppasswords
-# 2. Replace 'your-email@gmail.com' with your actual Gmail
-# 3. Replace 'your-16-char-app-password' with the generated password
-# 4. Save the file
+# 1. Sign up for Resend at https://resend.com/
+# 2. Get your API key from: https://resend.com/api-keys
+# 3. Add and verify your domain: ultra-predict.co.ke
+#    - Go to: https://resend.com/domains
+#    - Click "Add Domain"
+#    - Enter: ultra-predict.co.ke
+#    - Add the DNS records provided by Resend to your domain registrar
+#    - Wait for verification (usually takes a few minutes)
+# 4. Set environment variables in Render:
+#    - RESEND_API_KEY=re_xxxxxxxxxxxxx
+#    - FROM_EMAIL=noreply@ultra-predict.co.ke
 # 5. Restart your backend server
-# 6. Check logs for: "✅ Email service initialized successfully"
+# 6. Check logs for: "✅ Resend email service initialized successfully"
+# 7. Test by requesting a password reset or email verification
 
+# ========================================
+# DNS RECORDS NEEDED (Add to your domain registrar)
+# ========================================
+# Resend will provide these when you add your domain:
+# - SPF record (TXT)
+# - DKIM record (TXT) 
+# - DMARC record (TXT) - Optional but recommended
+#
+# Example (Resend will give you exact values):
+# Type: TXT
+# Name: @
+# Value: (provided by Resend)
+
+# ========================================
+# TESTING
+# ========================================
+# After setup, test email sending:
+# 1. Try registering a new account (verification email)
+# 2. Try forgot password (reset email)
+# 3. Check your email inbox
+# 4. Check Resend dashboard for delivery status: https://resend.com/emails
+
+# ========================================
+# TROUBLESHOOTING
+# ========================================
+# If emails aren't sending:
+# 1. Check RESEND_API_KEY is correct
+# 2. Verify domain is verified in Resend dashboard
+# 3. Check DNS records are properly configured
+# 4. Check backend logs for error messages
+# 5. Verify FROM_EMAIL matches your verified domain
