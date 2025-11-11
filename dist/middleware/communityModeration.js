@@ -67,37 +67,47 @@ class CommunityModeration {
     }
     static async generateAIReflection(content, mood) {
         const reflections = [
-            `Thank you for sharing your thoughts. Your openness helps others feel less alone.`,
-            `It takes courage to express your feelings. You're doing important work for your wellbeing.`,
-            `Your perspective adds valuable insight to our community. Keep being authentic.`,
-            `Sharing your experience helps others who might be going through similar challenges.`,
-            `Your reflection shows growth and self-awareness. That's something to be proud of.`,
-            `Thank you for contributing to our supportive community. Your voice matters.`,
-            `Your honesty creates a safe space for others to share their own experiences.`,
-            `It's beautiful to see someone taking care of their mental health. Keep going!`
+            `Thanks for sharing this with us. It's really brave to open up like this.`,
+            `I can hear how much this means to you. Your honesty helps others feel less alone.`,
+            `What you've shared here shows real strength. Keep being authentic with yourself.`,
+            `Your perspective is so valuable. It helps others who might be going through something similar.`,
+            `I love seeing someone taking care of their mental health like this. You're doing great.`,
+            `Your voice matters here. Thanks for contributing to our supportive community.`,
+            `It's beautiful to see someone reflecting on their experiences. Keep going!`,
+            `Your openness creates a safe space for others. That's really meaningful.`
         ];
-        // Mood-specific reflections
+        // Mood-specific reflections with conversational tone
         if (mood) {
             const moodReflections = {
                 grateful: [
-                    `Your gratitude shines through your words. It's wonderful to see you finding things to appreciate.`,
-                    `Practicing gratitude like this is so powerful for mental wellbeing. Thank you for sharing.`,
-                    `Your thankful perspective is inspiring. Gratitude truly transforms our outlook.`
+                    `Your gratitude really shines through here. It's wonderful to see you finding things to appreciate.`,
+                    `Practicing gratitude like this is so powerful. Thanks for sharing this beautiful perspective.`,
+                    `I love how you're focusing on what's good. Gratitude really does transform how we see things.`
                 ],
                 hopeful: [
-                    `Your hope is contagious! It's beautiful to see optimism in your words.`,
-                    `Hope is such a powerful force. Thank you for sharing your positive outlook.`,
-                    `Your hopeful perspective brings light to our community. Keep that optimism!`
+                    `Your hope is contagious! It's beautiful to see this optimism in your words.`,
+                    `Hope is such a powerful thing. Thanks for sharing your positive outlook with us.`,
+                    `Your hopeful perspective brings such light to our community. Keep that optimism flowing!`
                 ],
                 calm: [
-                    `Your peaceful energy comes through in your words. Thank you for sharing this calm moment.`,
-                    `It's wonderful to read about someone finding peace. Your calmness is inspiring.`,
-                    `Your peaceful reflection helps others remember that calm moments are possible.`
+                    `I can feel the peaceful energy in your words. Thanks for sharing this calm moment.`,
+                    `It's wonderful to read about someone finding peace. Your calmness is really inspiring.`,
+                    `Your peaceful reflection helps others remember that calm moments are totally possible.`
                 ],
                 proud: [
-                    `You should be proud! Celebrating your achievements is so important for mental health.`,
-                    `Your pride in your progress is well-deserved. Keep acknowledging your growth!`,
+                    `You should absolutely be proud! Celebrating your wins is so important for mental health.`,
+                    `Your pride in your progress is totally deserved. Keep acknowledging how far you've come!`,
                     `It's beautiful to see someone recognizing their own worth. You deserve to feel proud.`
+                ],
+                anxious: [
+                    `I can hear the worry in your words, and that's okay. You're not alone in feeling this way.`,
+                    `Anxiety can be so overwhelming. Thanks for sharing what's on your mind.`,
+                    `It takes courage to talk about anxiety. You're doing something really important for yourself.`
+                ],
+                sad: [
+                    `I can feel the heaviness in what you've shared. Your feelings are completely valid.`,
+                    `It's okay to not be okay sometimes. Thanks for trusting us with your feelings.`,
+                    `Your sadness is real, and it's okay to feel it. You're not alone in this.`
                 ]
             };
             if (moodReflections[mood]) {

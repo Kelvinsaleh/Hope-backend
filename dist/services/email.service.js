@@ -12,7 +12,7 @@ class EmailService {
     }
     initialize() {
         const resendApiKey = process.env.RESEND_API_KEY;
-        const fromEmail = process.env.FROM_EMAIL || 'noreply@hope-therapy.com';
+        const fromEmail = process.env.FROM_EMAIL || 'noreply@ultra-predict.co.ke';
         if (!resendApiKey) {
             logger_1.logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             logger_1.logger.error('❌ RESEND API KEY NOT CONFIGURED - OTP EMAILS WILL NOT BE SENT!');
@@ -24,11 +24,13 @@ class EmailService {
             logger_1.logger.error('📖 Setup Guide:');
             logger_1.logger.error('  1. Sign up at https://resend.com/');
             logger_1.logger.error('  2. Get your API key from the dashboard');
-            logger_1.logger.error('  3. Add to Render environment variables:');
+            logger_1.logger.error('  3. Verify your domain: ultra-predict.co.ke');
+            logger_1.logger.error('  4. Add to Render environment variables:');
             logger_1.logger.error('     RESEND_API_KEY=re_your_api_key_here');
-            logger_1.logger.error('     FROM_EMAIL=noreply@yourdomain.com');
+            logger_1.logger.error('     FROM_EMAIL=noreply@ultra-predict.co.ke');
             logger_1.logger.error('');
             logger_1.logger.error('🔗 Resend Dashboard: https://resend.com/api-keys');
+            logger_1.logger.error('🔗 Domain Settings: https://resend.com/domains');
             logger_1.logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             this.isConfigured = false;
             return;
@@ -237,6 +239,9 @@ class EmailService {
         });
     }
     async sendPasswordResetCode(email, code, name) {
+        // Get frontend URL from environment or use default
+        const frontendUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://ultra-predict.co.ke';
+        const resetLink = `${frontendUrl}/reset-password?token=${code}`;
         const html = `
       <!DOCTYPE html>
       <html>
@@ -265,6 +270,20 @@ class EmailService {
             font-weight: bold;
             color: #6366f1;
             margin-bottom: 10px;
+          }
+          .button {
+            display: inline-block;
+            background-color: #6366f1;
+            color: white;
+            padding: 16px 32px;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+            margin: 20px 0;
+            text-align: center;
+          }
+          .button:hover {
+            background-color: #4f46e5;
           }
           .code-box {
             background-color: white;
@@ -301,6 +320,9 @@ class EmailService {
             padding-top: 20px;
             border-top: 1px solid #e5e7eb;
           }
+          .text-center {
+            text-align: center;
+          }
         </style>
       </head>
       <body>
@@ -311,14 +333,21 @@ class EmailService {
           </div>
           
           <h2>Hello ${name}!</h2>
-          <p>We received a request to reset your Hope Therapy account password. Use the code below to reset your password:</p>
+          <p>We received a request to reset your Hope Therapy account password. Click the button below to reset your password:</p>
+          
+          <div class="text-center">
+            <a href="${resetLink}" class="button">Reset Password</a>
+          </div>
+          
+          <p style="text-align: center; color: #666; font-size: 14px;">Or use this code: <strong>${code}</strong></p>
           
           <div class="code-box">
             <div class="code">${code}</div>
             <div class="info">This code will expire in 15 minutes</div>
           </div>
           
-          <p>Enter this code on the password reset page to create a new password.</p>
+          <p>If the button doesn't work, copy and paste this link into your browser:</p>
+          <p style="word-break: break-all; color: #6366f1;">${resetLink}</p>
           
           <div class="warning">
             <strong>⚠️ Security Note:</strong> If you didn't request a password reset, please ignore this email. Your account is still secure.
@@ -337,9 +366,12 @@ class EmailService {
         const text = `
       Hello ${name}!
       
-      We received a request to reset your Hope Therapy account password. Use the code below to reset your password:
+      We received a request to reset your Hope Therapy account password.
       
-      Reset Code: ${code}
+      Click this link to reset your password:
+      ${resetLink}
+      
+      Or use this code: ${code}
       
       This code will expire in 15 minutes.
       

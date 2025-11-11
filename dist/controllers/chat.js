@@ -242,7 +242,7 @@ const sendMessage = async (req, res) => {
                 logger_1.logger.warn("Could not fetch user context:", contextError);
             }
             // Build the mood-adaptive Hope prompt with emotional intelligence
-            const enhancedPrompt = (0, hopePersonality_1.buildHopePrompt)(currentUserMood, conversationHistory + `\n\nUser: ${message}`, userContext);
+            const enhancedPrompt = (0, hopePersonality_1.buildHopePrompt)(currentUserMood, conversationHistory + `\n\nUser: ${message}`, userContext + '\nRespond concisely in 2-4 lines unless the user asks for step-by-step or the situation clearly requires more detail.');
             logger_1.logger.info("Sending request to Gemini AI...");
             logger_1.logger.info(`Prompt length: ${enhancedPrompt.length} characters`);
             const result = await model.generateContent({

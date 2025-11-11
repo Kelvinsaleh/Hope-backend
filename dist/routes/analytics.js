@@ -13,4 +13,5 @@ router.get("/", analyticsController_1.getUserAnalytics);
 router.get("/mood", analyticsController_1.getMoodAnalytics);
 router.get("/activity", analyticsController_1.getActivityAnalytics);
 router.get("/premium", (0, premiumAccess_1.requirePremium)("advancedAnalytics"), analyticsController_1.getPremiumAnalytics);
+router.post("/weekly-report", analyticsController_1.generateWeeklyReport);
 exports.default = router;

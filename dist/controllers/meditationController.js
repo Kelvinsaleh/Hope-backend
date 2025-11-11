@@ -167,8 +167,11 @@ const uploadMeditation = async (req, res) => {
             });
         }
         const { title, description, duration, category } = req.body;
-        // Upload to Vercel Blob
-        const blob = await (0, blob_1.put)(req.file.filename, req.file.buffer, {
+        // DEBUG: Log environment variable for blob token
+        console.log('Blob Token from ENV:', process.env.BLOB_READ_WRITE_TOKEN ? '[set]' : '[empty or not set]');
+        // Upload to Vercel Blob (modern API)
+        const pathname = `meditations/${Date.now()}_${req.file.originalname.replace(/\s+/g, '_')}`;
+        const blob = await (0, blob_1.put)(pathname, req.file.buffer, {
             access: 'public',
             contentType: req.file.mimetype,
             token: process.env.BLOB_READ_WRITE_TOKEN

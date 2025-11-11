@@ -187,18 +187,18 @@ function generateFallbackResponse(aiContext) {
     // Extract user message from context for more personalized fallback
     const messageMatch = aiContext.match(/User message: "([^"]+)"/);
     const userMessage = messageMatch ? messageMatch[1].toLowerCase() : '';
-    // Generate contextual fallback responses
+    // Generate contextual fallback responses with conversational tone
     if (userMessage.includes('help') || userMessage.includes('support')) {
-        return "I'm having technical trouble right now, but your feelings matter. If you need support urgently, reach out to someone you trust or a crisis helpline. I'll be back soon.";
+        return "I'm having some technical trouble right now, but your feelings matter. If you need support urgently, reach out to someone you trust or a crisis helpline. I'll be back soon.";
     }
     if (userMessage.includes('anxious') || userMessage.includes('anxiety')) {
-        return "I'm having technical issues, but anxiety is real and it passes. Try slow breaths or grounding yourself with what you can see and touch around you. Take it moment by moment.";
+        return "I'm having technical issues, but anxiety is real and it does pass. Maybe try some slow breaths or grounding yourself with what you can see and touch around you. Take it moment by moment.";
     }
     if (userMessage.includes('sad') || userMessage.includes('depressed') || userMessage.includes('down')) {
-        return "I'm having some technical trouble connecting right now. Whatever you're feeling is real and valid. Do something small that feels safe — reach out to someone, take a walk, or just rest. You don't have to push through alone.";
+        return "I'm having some technical trouble connecting right now. Whatever you're feeling is real and valid. Maybe do something small that feels safe — reach out to someone, take a walk, or just rest. You don't have to push through alone.";
     }
     if (userMessage.includes('stress') || userMessage.includes('overwhelmed')) {
-        return "I'm experiencing technical difficulties, but it sounds like there's a lot on you right now. Try breaking one thing into smaller pieces, or just pause and breathe. It's okay to step back.";
+        return "I'm experiencing technical difficulties, but it sounds like there's a lot on you right now. Maybe try breaking one thing into smaller pieces, or just pause and breathe. It's okay to step back.";
     }
     // Default fallback response
     return "I'm having technical trouble right now, but what you're going through matters. Take some breaths, and I'll be back soon. If you need immediate help, reach out to a crisis service.";
@@ -237,21 +237,40 @@ const sendMemoryEnhancedMessage = async (req, res) => {
         }
         // Gather user memory data
         const memoryData = await gatherUserMemory(userId);
-        // Create context for AI
-        const aiContext = createAIContext(message, memoryData, user, context);
-        logger_1.logger.info(`AI context created, length: ${aiContext.length}`);
+        // Determine current mood from most recent mood data
+        const currentMood = memoryData.moodPatterns.length > 0
+            ? (0, hopePersonality_1.normalizeMood)(memoryData.moodPatterns[0].mood)
+            : 'neutral';
+        // Build user context string
+        let userContext = `\n**What you know about ${user.name || 'this person'}:**\n`;
+        userContext += `- ${memoryData.journalEntries.length} journal entries recently\n`;
+        userContext += `- ${memoryData.moodPatterns.length} mood records (recent mood: ${memoryData.moodPatterns[0]?.mood || 'unknown'}/10)\n`;
+        userContext += `- ${memoryData.meditationHistory.length} meditation sessions completed\n`;
+        userContext += `- ${memoryData.therapySessions.length} previous therapy chats\n`;
+        // Add recent journal insights if available
+        if (memoryData.journalEntries.length > 0) {
+            userContext += `\n**Recent journal themes:** ${memoryData.insights.slice(0, 3).join(', ') || 'general reflection'}\n`;
+        }
+        // Build conversation history from memory
+        const conversationHistory = memoryData.therapySessions
+            .slice(-3)
+            .map(session => `Previous session: [${session.date}]`)
+            .join('\n');
+        // Use the mood-adaptive Hope prompt builder
+        const hopePrompt = (0, hopePersonality_1.buildHopePrompt)(currentMood, conversationHistory + `\n\nUser: ${message}`, `${userContext}\nRespond concisely in 2-4 lines unless the user asks for step-by-step or the situation clearly requires more detail.`);
+        logger_1.logger.info(`AI context created, length: ${hopePrompt.length}`);
         // Generate AI response using queue system for better quota management
         logger_1.logger.info(`Requesting AI response through queue system...`);
         let aiMessage;
         let isFailover = false;
         try {
-            aiMessage = await generateQueuedAIResponse(aiContext);
+            aiMessage = await generateQueuedAIResponse(hopePrompt);
             logger_1.logger.info(`AI response generated successfully, length: ${aiMessage.length}`);
         }
         catch (error) {
             // If AI completely fails, use fallback
             logger_1.logger.error(`AI generation failed completely:`, error.message);
-            aiMessage = generateFallbackResponse(aiContext);
+            aiMessage = generateFallbackResponse(hopePrompt);
             isFailover = true;
             logger_1.logger.info(`Using fallback response`);
         }
@@ -366,29 +385,6 @@ async function gatherUserMemory(userId) {
             lastUpdated: new Date(),
         };
     }
-}
-function createAIContext(message, memoryData, user, additionalContext) {
-    // Determine current mood from most recent mood data
-    const currentMood = memoryData.moodPatterns.length > 0
-        ? (0, hopePersonality_1.normalizeMood)(memoryData.moodPatterns[0].mood)
-        : 'neutral';
-    // Build user context string
-    let userContext = `\n**What you know about ${user.name || 'this person'}:**\n`;
-    userContext += `- ${memoryData.journalEntries.length} journal entries recently\n`;
-    userContext += `- ${memoryData.moodPatterns.length} mood records (recent mood: ${memoryData.moodPatterns[0]?.mood || 'unknown'}/10)\n`;
-    userContext += `- ${memoryData.meditationHistory.length} meditation sessions completed\n`;
-    userContext += `- ${memoryData.therapySessions.length} previous therapy chats\n`;
-    // Add recent journal insights if available
-    if (memoryData.journalEntries.length > 0) {
-        userContext += `\n**Recent journal themes:** ${memoryData.insights.slice(0, 3).join(', ') || 'general reflection'}\n`;
-    }
-    // Build conversation history from memory
-    const conversationHistory = memoryData.therapySessions
-        .slice(-3)
-        .map(session => `Previous session: [${session.date}]`)
-        .join('\n');
-    // Use the mood-adaptive Hope prompt builder
-    return (0, hopePersonality_1.buildHopePrompt)(currentMood, conversationHistory + `\n\nUser: ${message}`, userContext);
 }
 async function generatePersonalizedSuggestions(memoryData, userMessage, aiResponse) {
     const suggestions = [];

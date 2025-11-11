@@ -5,6 +5,7 @@ const CBTThoughtRecord_1 = require("../models/CBTThoughtRecord");
 const CBTActivity_1 = require("../models/CBTActivity");
 const Mood_1 = require("../models/Mood");
 const generative_ai_1 = require("@google/generative-ai");
+const hopePersonality_1 = require("../utils/hopePersonality");
 // Initialize Gemini API
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const genAI = GEMINI_API_KEY ? new generative_ai_1.GoogleGenerativeAI(GEMINI_API_KEY) : null;
@@ -246,23 +247,27 @@ const generateAICBTInsights = async (req, res) => {
         let prompt = "";
         if (type === 'journal_insights') {
             // Journal entry insights - return simple array of insights
-            prompt = `Analyze this journal entry and provide 3-5 brief, supportive insights as a mental health companion.
+            prompt = `Respond concisely in 2-4 lines unless the user asks for step-by-step or the situation clearly requires more detail.
+
+Analyze this journal entry and provide 3-5 brief, supportive insights as a mental health companion.
 
 Journal: "${text}"
 Mood: ${mood || 'Not specified'}/6
 
 Respond with a JSON array of 3-5 short insights (1-2 sentences each). Focus on:
-- Recognizing emotional patterns
-- Offering gentle encouragement
-- Suggesting helpful coping strategies
-- Acknowledging their feelings
+- Recognizing emotional patterns with warmth
+- Offering gentle encouragement like a supportive friend
+- Suggesting helpful coping strategies naturally
+- Acknowledging their feelings genuinely
 
 Format: ["insight 1", "insight 2", "insight 3"]
 
 Only return the JSON array, nothing else.`;
         }
         else if (type === 'thought_analysis') {
-            prompt = `You are a CBT (Cognitive Behavioral Therapy) expert. Analyze the following thought and provide insights:
+            prompt = `Respond concisely in 2-4 lines unless the user asks for step-by-step or the situation clearly requires more detail.
+
+You are a CBT (Cognitive Behavioral Therapy) expert. Analyze the following thought and provide insights:
 
 Thought: "${text}"
 
@@ -275,7 +280,9 @@ Please provide a JSON response with:
 Format your response as valid JSON only.`;
         }
         else if (type === 'mood_analysis') {
-            prompt = `Analyze this mood and situation with empathy:
+            prompt = `Respond concisely in 2-4 lines unless the user asks for step-by-step or the situation clearly requires more detail.
+
+Analyze this mood and situation with empathy:
 
 Mood Level: ${mood}/10
 Emotions: ${emotions?.join(', ') || 'Not specified'}
@@ -285,12 +292,14 @@ Provide a JSON response with:
 1. copingStrategies: Array of 4-6 brief, actionable coping strategies
 2. urgency: "immediate", "moderate", or "routine"
 3. suggestedActivities: Array of 3-5 simple activities
-4. supportiveMessage: A simple, genuine message (2-3 sentences, 30-40 words max). Talk like a real person, not a therapist. No clichés.
+4. supportiveMessage: A simple, genuine message (2-3 sentences, 30-40 words max). Talk like a supportive friend, not a therapist. Be warm and conversational.
 
 Format as valid JSON only. Keep supportiveMessage natural and real.`;
         }
         else if (type === 'general_insights') {
-            prompt = `You are a CBT therapist. Provide general CBT insights for:
+            prompt = `Respond concisely in 2-4 lines unless the user asks for step-by-step or the situation clearly requires more detail.
+
+You are a CBT therapist. Provide general CBT insights for:
 
 Text: "${text}"
 Mood: ${mood || 'Not specified'}/10
@@ -303,6 +312,7 @@ Please provide a JSON response with:
 
 Format your response as valid JSON only.`;
         }
+        prompt = (0, hopePersonality_1.buildHopePrompt)(mood || 'neutral', `Type: ${type || 'N/A'}\nText/Situation: ${text}\nEmotions: ${emotions?.join(', ') || 'N/A'}`, 'CBT Insights flow. Respond concisely in 2-4 lines unless the user asks for step-by-step or the situation clearly requires more detail.');
         const result = await model.generateContent(prompt);
         const response = await result.response;
         let aiText = response.text();
@@ -396,7 +406,9 @@ const getCBTInsights = async (req, res) => {
         if (genAI && thoughtRecords.length > 0) {
             try {
                 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-                const prompt = `As a CBT therapist, analyze this user's pattern:
+                const prompt = `Respond concisely in 2-4 lines unless the user asks for step-by-step or the situation clearly requires more detail.
+
+As a CBT therapist, analyze this user's pattern:
 
 Common cognitive distortions: ${commonDistortions.map(d => d.distortion).join(', ')}
 Thought records completed: ${thoughtRecords.length}

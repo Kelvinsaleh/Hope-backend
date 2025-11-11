@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getCommunityStats = exports.getRecentActivity = exports.getDailyPrompts = exports.joinChallenge = exports.getActiveChallenges = exports.createComment = exports.getPostComments = exports.reactToPost = exports.createPost = exports.getSpacePosts = exports.getCommunitySpaces = void 0;
+exports.saveImageMetadata = exports.sharePost = exports.deleteComment = exports.deletePost = exports.getFeed = exports.getCommunityStats = exports.getRecentActivity = exports.getDailyPrompts = exports.joinChallenge = exports.getActiveChallenges = exports.createComment = exports.getPostComments = exports.reactToPost = exports.createPost = exports.getSpacePosts = exports.getCommunitySpaces = void 0;
 const mongoose_1 = require("mongoose");
 const communityModeration_1 = require("../middleware/communityModeration");
 const logger_1 = require("../utils/logger");
@@ -65,7 +65,10 @@ const getSpacePosts = async (req, res) => {
         const { spaceId } = req.params;
         const { page = 1, limit = 20 } = req.query;
         const skip = (Number(page) - 1) * Number(limit);
-        const posts = await Community_1.CommunityPost.find({ spaceId })
+        const posts = await Community_1.CommunityPost.find({
+            spaceId,
+            isDeleted: false
+        })
             .populate('userId', 'username')
             .populate('comments')
             .sort({ createdAt: -1 })
@@ -94,7 +97,7 @@ exports.getSpacePosts = getSpacePosts;
 const createPost = async (req, res) => {
     try {
         const userId = new mongoose_1.Types.ObjectId(req.user._id);
-        let { spaceId, content, mood, isAnonymous } = req.body;
+        let { spaceId, content, mood, isAnonymous, images } = req.body;
         // Validate spaceId
         if (!spaceId || spaceId.trim() === '') {
             return res.status(400).json({
@@ -121,6 +124,27 @@ const createPost = async (req, res) => {
                 upgradeRequired: true
             });
         }
+        // Validate content length: max 2000 words
+        const wordCount = (content || '')
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean).length;
+        if (wordCount === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Post content cannot be empty'
+            });
+        }
+        if (wordCount > 2000) {
+            return res.status(400).json({
+                success: false,
+                error: 'Post exceeds the 2000-word limit'
+            });
+        }
+        // Enforce max 6 images
+        if (Array.isArray(images) && images.length > 6) {
+            images = images.slice(0, 6);
+        }
         // Moderate content
         const moderation = await communityModeration_1.CommunityModeration.moderateContent(content);
         if (!moderation.isSafe) {
@@ -139,6 +163,7 @@ const createPost = async (req, res) => {
             content,
             mood,
             isAnonymous: isAnonymous || false,
+            images: images || [],
             isModerated: !moderation.isSafe
         });
         await post.save();
@@ -211,12 +236,30 @@ const getPostComments = async (req, res) => {
         const { postId } = req.params;
         // Convert postId to ObjectId
         const postObjectId = new mongoose_1.Types.ObjectId(postId);
-        const comments = await Community_1.CommunityComment.find({ postId: postObjectId })
+        // Get top-level comments (no parentCommentId) and their replies
+        const topLevelComments = await Community_1.CommunityComment.find({
+            postId: postObjectId,
+            parentCommentId: { $exists: false },
+            isDeleted: false
+        })
             .populate('userId', 'username')
             .sort({ createdAt: 1 });
+        // Get replies for each top-level comment
+        const commentsWithReplies = await Promise.all(topLevelComments.map(async (comment) => {
+            const replies = await Community_1.CommunityComment.find({
+                parentCommentId: comment._id,
+                isDeleted: false
+            })
+                .populate('userId', 'username')
+                .sort({ createdAt: 1 });
+            return {
+                ...comment.toObject(),
+                replies
+            };
+        }));
         res.json({
             success: true,
-            comments
+            comments: commentsWithReplies
         });
     }
     catch (error) {
@@ -232,7 +275,7 @@ exports.getPostComments = getPostComments;
 const createComment = async (req, res) => {
     try {
         const userId = new mongoose_1.Types.ObjectId(req.user._id);
-        const { postId, content, isAnonymous } = req.body;
+        const { postId, content, isAnonymous, parentCommentId, images } = req.body;
         // Convert postId to ObjectId
         const postObjectId = new mongoose_1.Types.ObjectId(postId);
         // Comments are free for all authenticated users
@@ -253,6 +296,8 @@ const createComment = async (req, res) => {
             userId,
             content,
             isAnonymous: isAnonymous || false,
+            parentCommentId: parentCommentId ? new mongoose_1.Types.ObjectId(parentCommentId) : undefined,
+            images: images || [],
             isModerated: !moderation.isSafe
         });
         await comment.save();
@@ -485,9 +530,9 @@ exports.getRecentActivity = getRecentActivity;
 // Get community stats
 const getCommunityStats = async (req, res) => {
     try {
-        const totalPosts = await Community_1.CommunityPost.countDocuments();
-        const totalComments = await Community_1.CommunityComment.countDocuments();
-        const activeUserIds = await Community_1.CommunityPost.distinct('userId');
+        const totalPosts = await Community_1.CommunityPost.countDocuments({ isDeleted: false });
+        const totalComments = await Community_1.CommunityComment.countDocuments({ isDeleted: false });
+        const activeUserIds = await Community_1.CommunityPost.distinct('userId', { isDeleted: false });
         const activeUsers = activeUserIds.length;
         res.json({
             success: true,
@@ -508,3 +553,183 @@ const getCommunityStats = async (req, res) => {
     }
 };
 exports.getCommunityStats = getCommunityStats;
+// Lightweight global feed (fast): latest posts with minimal fields and counts
+const getFeed = async (req, res) => {
+    try {
+        const limit = Math.min(Number(req.query.limit || 20), 50);
+        const posts = await Community_1.CommunityPost.aggregate([
+            { $match: { isDeleted: false } },
+            { $sort: { createdAt: -1 } },
+            { $limit: limit },
+            // project minimal fields plus counts
+            {
+                $project: {
+                    userId: 1,
+                    spaceId: 1,
+                    content: 1,
+                    mood: 1,
+                    isAnonymous: 1,
+                    images: 1,
+                    aiReflection: 1,
+                    createdAt: 1,
+                    reactions: 1,
+                    commentCount: { $size: { $ifNull: ["$comments", []] } },
+                }
+            },
+            // user lookup (minimal)
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'userId',
+                    foreignField: '_id',
+                    as: 'user'
+                }
+            },
+            { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+            {
+                $project: {
+                    userId: {
+                        _id: '$user._id',
+                        username: '$user.username'
+                    },
+                    spaceId: 1,
+                    content: 1,
+                    mood: 1,
+                    isAnonymous: 1,
+                    images: 1,
+                    aiReflection: 1,
+                    createdAt: 1,
+                    reactions: 1,
+                    commentCount: 1,
+                }
+            },
+        ]);
+        return res.json({ success: true, posts });
+    }
+    catch (error) {
+        logger_1.logger.error('Error fetching feed:', error);
+        return res.status(500).json({ success: false, error: 'Failed to fetch feed' });
+    }
+};
+exports.getFeed = getFeed;
+// Delete a post (soft delete)
+const deletePost = async (req, res) => {
+    try {
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
+        const { postId } = req.params;
+        const post = await Community_1.CommunityPost.findById(postId);
+        if (!post) {
+            return res.status(404).json({
+                success: false,
+                error: 'Post not found'
+            });
+        }
+        // Check if user owns the post
+        if (!post.userId.equals(userId)) {
+            return res.status(403).json({
+                success: false,
+                error: 'You can only delete your own posts'
+            });
+        }
+        // Soft delete the post
+        post.isDeleted = true;
+        post.deletedAt = new Date();
+        await post.save();
+        res.json({
+            success: true,
+            message: 'Post deleted successfully'
+        });
+    }
+    catch (error) {
+        logger_1.logger.error('Error deleting post:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to delete post'
+        });
+    }
+};
+exports.deletePost = deletePost;
+// Delete a comment (soft delete)
+const deleteComment = async (req, res) => {
+    try {
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
+        const { commentId } = req.params;
+        const comment = await Community_1.CommunityComment.findById(commentId);
+        if (!comment) {
+            return res.status(404).json({
+                success: false,
+                error: 'Comment not found'
+            });
+        }
+        // Check if user owns the comment
+        if (!comment.userId.equals(userId)) {
+            return res.status(403).json({
+                success: false,
+                error: 'You can only delete your own comments'
+            });
+        }
+        // Soft delete the comment
+        comment.isDeleted = true;
+        comment.deletedAt = new Date();
+        await comment.save();
+        res.json({
+            success: true,
+            message: 'Comment deleted successfully'
+        });
+    }
+    catch (error) {
+        logger_1.logger.error('Error deleting comment:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to delete comment'
+        });
+    }
+};
+exports.deleteComment = deleteComment;
+// Share a post (increments share counter)
+const sharePost = async (req, res) => {
+    try {
+        const { postId } = req.params;
+        const post = await Community_1.CommunityPost.findById(postId);
+        if (!post) {
+            return res.status(404).json({ success: false, error: 'Post not found' });
+        }
+        post.shareCount = (post.shareCount || 0) + 1;
+        await post.save();
+        return res.json({ success: true, shareCount: post.shareCount });
+    }
+    catch (error) {
+        logger_1.logger.error('Error sharing post:', error);
+        return res.status(500).json({ success: false, error: 'Failed to share post' });
+    }
+};
+exports.sharePost = sharePost;
+// Save image metadata
+const saveImageMetadata = async (req, res) => {
+    try {
+        const { url, filename, contentType, size, postId, commentId, uploadedAt } = req.body;
+        // For now, we'll just log the metadata
+        // In a production system, you might want to store this in a separate collection
+        logger_1.logger.info('Image uploaded:', {
+            url,
+            filename,
+            contentType,
+            size,
+            postId,
+            commentId,
+            uploadedAt
+        });
+        res.json({
+            success: true,
+            message: 'Image metadata saved'
+        });
+    }
+    catch (error) {
+        logger_1.logger.error('Error saving image metadata:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to save image metadata'
+        });
+    }
+};
+exports.saveImageMetadata = saveImageMetadata;

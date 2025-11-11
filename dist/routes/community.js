@@ -14,14 +14,20 @@ router.get('/challenges', communityController_1.getActiveChallenges);
 router.get('/prompts', communityController_1.getDailyPrompts);
 router.get('/activity', communityController_1.getRecentActivity);
 router.get('/posts/:postId/comments', communityController_1.getPostComments);
+router.get('/feed', communityController_1.getFeed);
 // Protected routes (auth required)
 router.use(auth_1.authenticateToken);
 // Posts
 router.get('/spaces/:spaceId/posts', communityController_1.getSpacePosts);
 router.post('/posts', communityController_1.createPost);
 router.post('/posts/:postId/react', communityController_1.reactToPost);
+router.post('/posts/:postId/share', communityController_1.sharePost);
+router.delete('/posts/:postId', communityController_1.deletePost);
 // Comments
 router.post('/comments', communityController_1.createComment);
+router.delete('/comments/:commentId', communityController_1.deleteComment);
+// Images
+router.post('/images', communityController_1.saveImageMetadata);
 // Challenges
 router.post('/challenges/:challengeId/join', communityController_1.joinChallenge);
 exports.default = router;

@@ -52,6 +52,7 @@ const CommunityPostSchema = new mongoose_1.Schema({
     content: { type: String, required: true, maxlength: 2000 },
     mood: { type: String },
     isAnonymous: { type: Boolean, default: false },
+    images: [{ type: String }], // Array of image URLs
     reactions: {
         heart: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }],
         support: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }],
@@ -59,7 +60,10 @@ const CommunityPostSchema = new mongoose_1.Schema({
     },
     comments: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'CommunityComment' }],
     aiReflection: { type: String },
-    isModerated: { type: Boolean, default: false }
+    isModerated: { type: Boolean, default: false },
+    shareCount: { type: Number, default: 0 },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date }
 }, {
     timestamps: true
 });
@@ -69,11 +73,15 @@ const CommunityCommentSchema = new mongoose_1.Schema({
     userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
     content: { type: String, required: true, maxlength: 300 },
     isAnonymous: { type: Boolean, default: false },
+    parentCommentId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'CommunityComment' }, // For nested replies
+    images: [{ type: String }], // Array of image URLs
     reactions: {
         heart: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }],
         support: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }]
     },
-    isModerated: { type: Boolean, default: false }
+    isModerated: { type: Boolean, default: false },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date }
 }, {
     timestamps: true
 });
@@ -109,7 +117,10 @@ const CommunityPromptSchema = new mongoose_1.Schema({
 // Indexes for performance
 CommunityPostSchema.index({ spaceId: 1, createdAt: -1 });
 CommunityPostSchema.index({ userId: 1, createdAt: -1 });
+CommunityPostSchema.index({ isDeleted: 1 });
 CommunityCommentSchema.index({ postId: 1, createdAt: 1 });
+CommunityCommentSchema.index({ parentCommentId: 1, createdAt: 1 });
+CommunityCommentSchema.index({ isDeleted: 1 });
 exports.CommunitySpace = mongoose_1.default.model('CommunitySpace', CommunitySpaceSchema);
 exports.CommunityPost = mongoose_1.default.model('CommunityPost', CommunityPostSchema);
 exports.CommunityComment = mongoose_1.default.model('CommunityComment', CommunityCommentSchema);
