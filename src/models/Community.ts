@@ -96,7 +96,7 @@ const CommunitySpaceSchema = new Schema<ICommunitySpace>({
 const CommunityPostSchema = new Schema<ICommunityPost>({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   spaceId: { type: Schema.Types.ObjectId, ref: 'CommunitySpace', required: true },
-  content: { type: String, required: true, maxlength: 500 },
+  content: { type: String, required: true, maxlength: 2000 },
   mood: { type: String },
   isAnonymous: { type: Boolean, default: false },
   images: [{ type: String }], // Array of image URLs

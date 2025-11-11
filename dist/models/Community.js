@@ -49,7 +49,7 @@ const CommunitySpaceSchema = new mongoose_1.Schema({
 const CommunityPostSchema = new mongoose_1.Schema({
     userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
     spaceId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'CommunitySpace', required: true },
-    content: { type: String, required: true, maxlength: 500 },
+    content: { type: String, required: true, maxlength: 2000 },
     mood: { type: String },
     isAnonymous: { type: Boolean, default: false },
     reactions: {
