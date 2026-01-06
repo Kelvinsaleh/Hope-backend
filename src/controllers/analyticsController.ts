@@ -7,6 +7,8 @@ import { Mood } from "../models/Mood";
 import { MeditationSession } from "../models/Meditation";
 import { ChatSession } from "../models/ChatSession";
 import { User } from "../models/User";
+import { UserProfile } from "../models/UserProfile";
+import { WeeklyReport } from "../models/WeeklyReport";
 
 // Initialize Gemini API
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
@@ -92,6 +94,18 @@ export const getPremiumAnalytics = async (req: Request, res: Response) => {
   }
 };
 
+// Fetch saved weekly reports for the authenticated user
+export const getSavedWeeklyReports = async (req: Request, res: Response) => {
+  try {
+    const userId = new Types.ObjectId(req.user._id);
+    const reports = await WeeklyReport.find({ userId }).sort({ createdAt: -1 }).lean();
+    res.json({ success: true, reports });
+  } catch (error) {
+    logger.error('Error fetching saved weekly reports:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch reports' });
+  }
+};
+
 // Generate AI Weekly Report
 export const generateWeeklyReport = async (req: Request, res: Response) => {
   try {
@@ -116,13 +130,23 @@ export const generateWeeklyReport = async (req: Request, res: Response) => {
     // Gather weekly data
     const weeklyData = await gatherWeeklyData(userId, startDate, endDate);
 
+    // Load user profile to personalize the report
+    let userProfile: any = null;
+    try {
+      userProfile = await UserProfile.findOne({ userId }).lean();
+    } catch (e) {
+      logger.warn('Failed to load user profile for weekly report', e);
+    }
+
     // Generate AI report
     let aiReport: string;
     let isFailover = false;
 
     if (genAI && weeklyData.hasData) {
       try {
-        aiReport = await generateAIWeeklyReport(weeklyData, user.name || 'User');
+    // Build a concise profile summary to pass to the AI model for personalization
+    const profileSummary = userProfile ? `bio: ${(userProfile.bio || '').toString().slice(0,200)}; goals: ${(userProfile.goals||[]).slice(0,5).join(', ')}; challenges: ${(userProfile.challenges||[]).slice(0,5).join(', ')}; communicationStyle: ${userProfile.communicationStyle || 'unknown'}` : '';
+    aiReport = await generateAIWeeklyReport(weeklyData, user.name || 'User', profileSummary);
         logger.info("AI weekly report generated successfully");
       } catch (error) {
         logger.error("AI report generation failed:", error);
@@ -130,7 +154,7 @@ export const generateWeeklyReport = async (req: Request, res: Response) => {
         isFailover = true;
       }
     } else {
-      aiReport = generateFallbackWeeklyReport(weeklyData, user.name || 'User');
+  aiReport = generateFallbackWeeklyReport(weeklyData, user.name || 'User');
       isFailover = true;
     }
 
@@ -147,6 +171,17 @@ export const generateWeeklyReport = async (req: Request, res: Response) => {
       },
       isFailover
     };
+
+    // Persist the generated report for later retrieval
+    try {
+      await WeeklyReport.create({
+        userId,
+        content: aiReport,
+        metadata: reportMetadata
+      });
+    } catch (e) {
+      logger.warn('Failed to persist weekly report:', e);
+    }
 
     res.json({
       success: true,
@@ -174,7 +209,7 @@ export const generateWeeklyReport = async (req: Request, res: Response) => {
 };
 
 // Helper function to gather weekly data
-async function gatherWeeklyData(userId: Types.ObjectId, startDate: Date, endDate: Date) {
+export async function gatherWeeklyData(userId: Types.ObjectId, startDate: Date, endDate: Date) {
   try {
     // Get mood entries for the week
     const moodEntries = await Mood.find({
@@ -314,7 +349,7 @@ function extractProgressHighlights(journalEntries: any[], moodEntries: any[]): s
 }
 
 // Generate AI weekly report
-async function generateAIWeeklyReport(weeklyData: any, userName: string): Promise<string> {
+export async function generateAIWeeklyReport(weeklyData: any, userName: string, profileSummary: string = ''): Promise<string> {
   if (!genAI) {
     throw new Error('AI service not configured');
   }
@@ -324,6 +359,7 @@ async function generateAIWeeklyReport(weeklyData: any, userName: string): Promis
   const prompt = `You are the user's personal wellness guide. Generate a short, friendly weekly report summarizing their emotional trends, behaviors, and growth.
 
 User: ${userName}
+${profileSummary ? `Profile: ${profileSummary}\n` : ''}
 Week Data:
 - Average mood: ${weeklyData.averageMood}/10
 - Mood trend: ${weeklyData.moodTrend}
@@ -354,7 +390,7 @@ Format as a clean, readable report with emojis where appropriate.`;
 }
 
 // Generate fallback weekly report
-function generateFallbackWeeklyReport(weeklyData: any, userName: string): string {
+export function generateFallbackWeeklyReport(weeklyData: any, userName: string): string {
   const weekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const weekEnd = new Date();
   

@@ -10,38 +10,51 @@ export const createMood = async (
   next: NextFunction
 ) => {
   try {
-    const { score, note, context, activities } = req.body;
+    const { score, mood, note, context, activities } = req.body;
     const userId = req.user?._id; // From auth middleware
 
     if (!userId) {
       return res.status(401).json({ message: "User not authenticated" });
     }
 
-    const mood = new Mood({
+    // Accept either `mood` or `score` (frontend compatibility)
+    const finalScore = typeof score === 'number' ? score : (typeof mood === 'number' ? mood : null);
+    if (finalScore === null) {
+      return res.status(400).json({ success: false, error: 'Mood score is required' });
+    }
+
+    // Prevent users from creating more than one mood entry within 12 hours
+    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+    const recent = await Mood.findOne({ userId, timestamp: { $gte: twelveHoursAgo } }).lean();
+    if (recent) {
+      return res.status(429).json({ success: false, error: 'You have already logged mood in the last 12 hours' });
+    }
+
+    const moodEntry = new Mood({
       userId,
-      score,
+      score: finalScore,
       note,
       context,
       activities,
       timestamp: new Date(),
     });
 
-    await mood.save();
+  await moodEntry.save();
     logger.info(`Mood entry created for user ${userId}`);
 
     // Send mood update event to Inngest
     await sendMoodUpdateEvent({
       userId,
-      mood: score,
+      mood: finalScore,
       note,
       context,
       activities,
-      timestamp: mood.timestamp,
+      timestamp: moodEntry.timestamp,
     });
 
     res.status(201).json({
       success: true,
-      data: mood,
+      data: moodEntry,
     });
   } catch (error) {
     next(error);
@@ -188,6 +201,34 @@ export const getRecentMoods = async (
     });
   } catch (error) {
     logger.error("Error fetching recent moods:", error);
+    next(error);
+  }
+};
+
+// Return whether the user should be prompted for a mood check (based on last entry)
+export const shouldPromptMood = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ message: "User not authenticated" });
+    }
+
+    const last = await Mood.findOne({ userId }).sort({ timestamp: -1 }).lean();
+    const twelveHours = 12 * 60 * 60 * 1000;
+    let shouldPrompt = true;
+    let lastTimestamp: string | null = null;
+    if (last && last.timestamp) {
+      lastTimestamp = new Date(last.timestamp).toISOString();
+      shouldPrompt = Date.now() - new Date(last.timestamp).getTime() >= twelveHours;
+    }
+
+    res.json({ success: true, shouldPrompt, lastTimestamp });
+  } catch (error) {
+    logger.error('Error in shouldPromptMood:', error);
     next(error);
   }
 };

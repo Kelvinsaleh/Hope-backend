@@ -9,6 +9,7 @@ const Mood_1 = require("../models/Mood");
 const Meditation_1 = require("../models/Meditation");
 const ChatSession_1 = require("../models/ChatSession");
 const User_1 = require("../models/User");
+const UserProfile_1 = require("../models/UserProfile");
 // Initialize Gemini API
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const genAI = GEMINI_API_KEY ? new generative_ai_1.GoogleGenerativeAI(GEMINI_API_KEY) : null;
@@ -115,12 +116,22 @@ const generateWeeklyReport = async (req, res) => {
         }
         // Gather weekly data
         const weeklyData = await gatherWeeklyData(userId, startDate, endDate);
+        // Load user profile to personalize the report
+        let userProfile = null;
+        try {
+            userProfile = await UserProfile_1.UserProfile.findOne({ userId }).lean();
+        }
+        catch (e) {
+            logger_1.logger.warn('Failed to load user profile for weekly report', e);
+        }
         // Generate AI report
         let aiReport;
         let isFailover = false;
         if (genAI && weeklyData.hasData) {
             try {
-                aiReport = await generateAIWeeklyReport(weeklyData, user.name || 'User');
+                // Build a concise profile summary to pass to the AI model for personalization
+                const profileSummary = userProfile ? `bio: ${(userProfile.bio || '').toString().slice(0, 200)}; goals: ${(userProfile.goals || []).slice(0, 5).join(', ')}; challenges: ${(userProfile.challenges || []).slice(0, 5).join(', ')}; communicationStyle: ${userProfile.communicationStyle || 'unknown'}` : '';
+                aiReport = await generateAIWeeklyReport(weeklyData, user.name || 'User', profileSummary);
                 logger_1.logger.info("AI weekly report generated successfully");
             }
             catch (error) {
@@ -294,7 +305,7 @@ function extractProgressHighlights(journalEntries, moodEntries) {
     return [...new Set(highlights)]; // Remove duplicates
 }
 // Generate AI weekly report
-async function generateAIWeeklyReport(weeklyData, userName) {
+async function generateAIWeeklyReport(weeklyData, userName, profileSummary = '') {
     if (!genAI) {
         throw new Error('AI service not configured');
     }
@@ -302,6 +313,7 @@ async function generateAIWeeklyReport(weeklyData, userName) {
     const prompt = `You are the user's personal wellness guide. Generate a short, friendly weekly report summarizing their emotional trends, behaviors, and growth.
 
 User: ${userName}
+${profileSummary ? `Profile: ${profileSummary}\n` : ''}
 Week Data:
 - Average mood: ${weeklyData.averageMood}/10
 - Mood trend: ${weeklyData.moodTrend}

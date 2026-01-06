@@ -141,11 +141,11 @@ const login = async (req, res) => {
         // Users can login even if not verified, but may have limited features
         // Generate JWT token with additional entropy to prevent duplicates
         const token = jsonwebtoken_1.default.sign({ userId: user._id, timestamp: Date.now(), random: Math.random() }, process.env.JWT_SECRET || "your-secret-key", { expiresIn: "24h" });
-        // Create session - delete any old sessions with same token first
+        // Create session - delete all previous sessions for this user (force logout on other devices)
         const expiresAt = new Date();
         expiresAt.setHours(expiresAt.getHours() + 24);
-        // Safety: Delete any existing session with this token (prevents duplicate key error)
-        await Session_1.Session.deleteOne({ token }).catch(() => { });
+        // Delete all previous sessions for this user
+        await Session_1.Session.deleteMany({ userId: user._id }).catch(() => { });
         const session = new Session_1.Session({
             userId: user._id,
             token,

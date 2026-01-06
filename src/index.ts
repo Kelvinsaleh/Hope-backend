@@ -33,6 +33,7 @@ import { connectDB } from './utils/db';
 import { healthCheck, readinessCheck, keepAlive } from './controllers/healthController';
 import seedCommunityData from './scripts/seedCommunity';
 import { CommunitySpace } from './models/Community';
+import { startWeeklyReportScheduler } from './jobs/weeklyReportScheduler';
 
 // Load environment variables
 dotenv.config();
@@ -231,6 +232,13 @@ connectDB()
   .then(async () => {
     // Auto-seed community spaces on startup
     await autoSeedCommunity();
+    // Start weekly report scheduler
+    try {
+      startWeeklyReportScheduler();
+      logger.info('Weekly report scheduler started');
+    } catch (e) {
+      logger.warn('Failed to start weekly report scheduler', e);
+    }
     
     app.listen(PORT, () => {
       logger.info(`🚀 Server is running on port ${PORT}`);

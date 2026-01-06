@@ -6,6 +6,7 @@ import {
   getMoodStats, 
   getRecentMoods 
 } from "../controllers/moodController";
+import { shouldPromptMood } from "../controllers/moodController";
 
 const router = express.Router();
 
@@ -23,5 +24,8 @@ router.get("/stats", getMoodStats);
 
 // Get recent moods
 router.get("/", getRecentMoods);
+
+// Check whether the user should be prompted (12-hour rule)
+router.get('/should-prompt', shouldPromptMood);
 
 export default router;

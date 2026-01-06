@@ -163,12 +163,12 @@ export const login = async (req: Request, res: Response) => {
       { expiresIn: "24h" }
     );
 
-    // Create session - delete any old sessions with same token first
+    // Create session - delete all previous sessions for this user (force logout on other devices)
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 24);
 
-    // Safety: Delete any existing session with this token (prevents duplicate key error)
-    await Session.deleteOne({ token }).catch(() => {});
+    // Delete all previous sessions for this user
+    await Session.deleteMany({ userId: user._id }).catch(() => {});
 
     const session = new Session({
       userId: user._id,

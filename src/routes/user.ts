@@ -3,6 +3,11 @@ import { authenticateToken } from "../middleware/auth";
 import { Subscription } from "../models/Subscription";
 import { Types } from "mongoose";
 import { UserProfile } from "../models/UserProfile";
+// Validation defaults - can be overridden via env
+const MAX_GOALS = Number(process.env.MAX_GOALS) || 10;
+const MAX_CHALLENGES = Number(process.env.MAX_CHALLENGES) || 10;
+const MAX_PROFILE_STR_LEN = Number(process.env.MAX_PROFILE_STR_LEN) || 200;
+const MAX_BIO_LEN = Number(process.env.MAX_BIO_LEN) || 500;
 import { User } from "../models/User";
 
 const router = express.Router();
@@ -64,6 +69,30 @@ router.get("/profile", async (req, res) => {
 
 router.post("/profile", async (req, res) => {
   try {
+    // Validate incoming profile body to avoid storing malformed data
+    const errors: Record<string, string> = {};
+    const body = req.body || {};
+
+    if (body.goals !== undefined) {
+      if (!Array.isArray(body.goals)) errors.goals = 'goals must be an array of strings';
+      else if (body.goals.length > MAX_GOALS) errors.goals = `max ${MAX_GOALS} goals allowed`;
+      else if ((body.goals as any[]).some(g => String(g || '').trim().length > MAX_PROFILE_STR_LEN)) errors.goals = `each goal must be <= ${MAX_PROFILE_STR_LEN} chars`;
+    }
+
+    if (body.challenges !== undefined) {
+      if (!Array.isArray(body.challenges)) errors.challenges = 'challenges must be an array of strings';
+      else if (body.challenges.length > MAX_CHALLENGES) errors.challenges = `max ${MAX_CHALLENGES} challenges allowed`;
+      else if ((body.challenges as any[]).some(c => String(c || '').trim().length > MAX_PROFILE_STR_LEN)) errors.challenges = `each challenge must be <= ${MAX_PROFILE_STR_LEN} chars`;
+    }
+
+    if (body.bio !== undefined) {
+      if (typeof body.bio !== 'string') errors.bio = 'bio must be a string';
+      else if (body.bio.trim().length > MAX_BIO_LEN) errors.bio = `bio must be <= ${MAX_BIO_LEN} characters`;
+    }
+
+    if (Object.keys(errors).length > 0) {
+      return res.status(400).json({ success: false, error: 'Invalid profile data', details: errors });
+    }
     const userId = new Types.ObjectId(req.user._id);
     const existing = await UserProfile.findOne({ userId });
     if (existing) {
@@ -82,7 +111,27 @@ router.put("/profile", async (req, res) => {
   try {
     const userId = new Types.ObjectId(req.user._id);
     console.log("📝 Profile update request:", { userId: userId.toString(), body: req.body });
-    
+    // Sanitize and validate updates similar to POST
+    const body = req.body || {};
+    const errors: Record<string,string> = {};
+
+    if (body.goals !== undefined) {
+      if (!Array.isArray(body.goals)) errors.goals = 'goals must be an array of strings';
+      else if (body.goals.length > MAX_GOALS) errors.goals = `max ${MAX_GOALS} goals allowed`;
+    }
+    if (body.challenges !== undefined) {
+      if (!Array.isArray(body.challenges)) errors.challenges = 'challenges must be an array of strings';
+      else if (body.challenges.length > MAX_CHALLENGES) errors.challenges = `max ${MAX_CHALLENGES} challenges allowed`;
+    }
+    if (body.bio !== undefined) {
+      if (typeof body.bio !== 'string') errors.bio = 'bio must be a string';
+      else if (body.bio.trim().length > MAX_BIO_LEN) errors.bio = `bio must be <= ${MAX_BIO_LEN} characters`;
+    }
+
+    if (Object.keys(errors).length > 0) {
+      return res.status(400).json({ success: false, error: 'Invalid profile data', details: errors });
+    }
+
     const updateResult = await UserProfile.updateOne(
       { userId }, 
       { $set: req.body }, 

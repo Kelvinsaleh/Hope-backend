@@ -182,6 +182,59 @@ async function generateQueuedAIResponse(aiContext) {
         });
     });
 }
+// Periodic cleanup task to evict expired cache entries
+// Simple in-memory cache to store pre-assembled memory blobs per user or per
+// client-provided memoryVersion. This keeps builds cheap when many messages
+// are exchanged in a short session.
+// Hardening: TTL and size cap to prevent unbounded memory growth.
+const memoryCache = new Map();
+const MEMORY_CACHE_TTL_MS = Number(process.env.MEMORY_CACHE_TTL_MS) || 1000 * 60 * 5; // 5 minutes
+const MEMORY_CACHE_MAX_ENTRIES = Number(process.env.MEMORY_CACHE_MAX_ENTRIES) || 200; // max entries in cache
+// Periodic cleanup task to evict expired cache entries
+setInterval(() => {
+    try {
+        const now = Date.now();
+        for (const [key, entry] of memoryCache.entries()) {
+            if (now - entry.lastUpdated > MEMORY_CACHE_TTL_MS) {
+                memoryCache.delete(key);
+                logger_1.logger.debug(`Periodic eviction of memory cache key=${key}`);
+            }
+        }
+    }
+    catch (e) {
+        logger_1.logger.error('Error during memory cache cleanup', e);
+    }
+}, Math.max(60000, MEMORY_CACHE_TTL_MS / 5));
+function getCachedMemory(key) {
+    const entry = memoryCache.get(key);
+    if (!entry)
+        return null;
+    if (Date.now() - entry.lastUpdated > MEMORY_CACHE_TTL_MS) {
+        memoryCache.delete(key);
+        logger_1.logger.debug(`Evicted expired memory cache key=${key}`);
+        return null;
+    }
+    return entry.memory;
+}
+function setCachedMemory(key, memory) {
+    // Evict oldest entries if we exceed the cap
+    if (memoryCache.size >= MEMORY_CACHE_MAX_ENTRIES) {
+        // evict least recently updated entry
+        let oldestKey = null;
+        let oldestTime = Infinity;
+        for (const [k, v] of memoryCache.entries()) {
+            if (v.lastUpdated < oldestTime) {
+                oldestTime = v.lastUpdated;
+                oldestKey = k;
+            }
+        }
+        if (oldestKey) {
+            memoryCache.delete(oldestKey);
+            logger_1.logger.info(`Evicted memory cache key=${oldestKey} due to size cap`);
+        }
+    }
+    memoryCache.set(key, { memory, lastUpdated: Date.now() });
+}
 // Fallback response generator
 function generateFallbackResponse(aiContext) {
     // Extract user message from context for more personalized fallback
@@ -205,7 +258,7 @@ function generateFallbackResponse(aiContext) {
 }
 const sendMemoryEnhancedMessage = async (req, res) => {
     try {
-        const { message, sessionId, userId, context, suggestions, userMemory } = req.body;
+        const { message, sessionId, userId, context, suggestions, userMemory, memoryVersion } = req.body;
         logger_1.logger.info(`Processing memory-enhanced message from user ${userId}`);
         if (!message) {
             return res.status(400).json({ error: "Message is required" });
@@ -235,8 +288,137 @@ const sendMemoryEnhancedMessage = async (req, res) => {
                 messages: [],
             });
         }
-        // Gather user memory data
-        const memoryData = await gatherUserMemory(userId);
+        // Use memoryVersion or a compact request to avoid rebuilding full memory every call.
+        // Prefer a cached memory entry keyed by memoryVersion if provided; otherwise
+        // fall back to userId-based caching for short-lived reuse.
+        let memoryData = null;
+        const cacheKey = memoryVersion ? `${userId}:${memoryVersion}` : `${userId}:latest`;
+        if (memoryVersion && memoryCache.has(cacheKey)) {
+            // Reuse cached memory blob for this memoryVersion
+            memoryData = memoryCache.get(cacheKey).memory;
+            logger_1.logger.debug(`Using cached memory for user ${userId} (version ${memoryVersion})`);
+        }
+        else if (!memoryVersion && memoryCache.has(cacheKey)) {
+            memoryData = memoryCache.get(cacheKey).memory;
+            logger_1.logger.debug(`Using latest cached memory for user ${userId}`);
+        }
+        // If we don't have cached memory, build it and cache under the computed key
+        if (!memoryData) {
+            memoryData = await gatherUserMemory(userId);
+            memoryCache.set(cacheKey, { memory: memoryData, lastUpdated: Date.now() });
+            logger_1.logger.debug(`Built and cached memory for user ${userId} (key=${cacheKey})`);
+        }
+        // Merge client-supplied small profile/deltas if provided. This allows the
+        // frontend to send quick edits without needing to persist immediately.
+        const suppliedProfile = (userMemory && userMemory.profile) || req.body?.userProfile;
+        const validationErrors = {};
+        if (suppliedProfile && typeof suppliedProfile === 'object') {
+            try {
+                // Validation rules
+                const MAX_GOALS = Number(process.env.MAX_GOALS) || 10;
+                const MAX_CHALLENGES = Number(process.env.MAX_CHALLENGES) || 10;
+                const MAX_STR_LEN = Number(process.env.MAX_PROFILE_STR_LEN) || 200;
+                const MAX_BIO_LEN = Number(process.env.MAX_BIO_LEN) || 500;
+                const sanitized = {};
+                // Validate goals
+                if (suppliedProfile.goals !== undefined) {
+                    if (!Array.isArray(suppliedProfile.goals)) {
+                        validationErrors['goals'] = 'goals must be an array of strings';
+                    }
+                    else {
+                        const items = suppliedProfile.goals.map((g) => String(g || '').trim()).filter(Boolean);
+                        if (items.length > MAX_GOALS)
+                            validationErrors['goals'] = `max ${MAX_GOALS} goals allowed`;
+                        const long = items.find((s) => s.length > MAX_STR_LEN);
+                        if (long)
+                            validationErrors['goals'] = `each goal must be <= ${MAX_STR_LEN} characters`;
+                        if (!validationErrors['goals'])
+                            sanitized.goals = items.slice(0, MAX_GOALS);
+                    }
+                }
+                // Validate challenges
+                if (suppliedProfile.challenges !== undefined) {
+                    if (!Array.isArray(suppliedProfile.challenges)) {
+                        validationErrors['challenges'] = 'challenges must be an array of strings';
+                    }
+                    else {
+                        const items = suppliedProfile.challenges.map((c) => String(c || '').trim()).filter(Boolean);
+                        if (items.length > MAX_CHALLENGES)
+                            validationErrors['challenges'] = `max ${MAX_CHALLENGES} challenges allowed`;
+                        const long = items.find((s) => s.length > MAX_STR_LEN);
+                        if (long)
+                            validationErrors['challenges'] = `each challenge must be <= ${MAX_STR_LEN} characters`;
+                        if (!validationErrors['challenges'])
+                            sanitized.challenges = items.slice(0, MAX_CHALLENGES);
+                    }
+                }
+                // Validate communicationStyle
+                if (suppliedProfile.communicationStyle !== undefined) {
+                    const v = String(suppliedProfile.communicationStyle || '').trim();
+                    if (!['gentle', 'direct', 'supportive'].includes(v)) {
+                        validationErrors['communicationStyle'] = 'must be one of: gentle, direct, supportive';
+                    }
+                    else {
+                        sanitized.communicationStyle = v;
+                    }
+                }
+                // Validate experienceLevel
+                if (suppliedProfile.experienceLevel !== undefined) {
+                    const v = String(suppliedProfile.experienceLevel || '').trim();
+                    if (!['beginner', 'intermediate', 'experienced'].includes(v)) {
+                        validationErrors['experienceLevel'] = 'must be one of: beginner, intermediate, experienced';
+                    }
+                    else {
+                        sanitized.experienceLevel = v;
+                    }
+                }
+                // Validate bio
+                if (suppliedProfile.bio !== undefined) {
+                    const b = String(suppliedProfile.bio || '').trim();
+                    if (b.length > MAX_BIO_LEN)
+                        validationErrors['bio'] = `bio must be <= ${MAX_BIO_LEN} characters`;
+                    else
+                        sanitized.bio = b;
+                }
+                // If any validation errors present, return 400 with details
+                if (Object.keys(validationErrors).length > 0) {
+                    logger_1.logger.warn('Validation errors in supplied profile', validationErrors);
+                    return res.status(400).json({ error: 'Invalid profile data', details: validationErrors });
+                }
+                // Merge sanitized values into memoryData.profile
+                memoryData.profile = {
+                    ...memoryData.profile,
+                    ...sanitized,
+                };
+            }
+            catch (e) {
+                logger_1.logger.warn('Failed to merge supplied userProfile into memoryData.profile', e);
+            }
+        }
+        // Incremental fetching: if client provided recentJournalIds, fetch only those entries
+        const recentJournalIds = (userMemory && Array.isArray(userMemory.recentJournalIds))
+            ? userMemory.recentJournalIds.map(String)
+            : (Array.isArray(req.body?.recentJournalIds) ? req.body.recentJournalIds.map(String) : []);
+        if (recentJournalIds.length > 0) {
+            try {
+                const ids = recentJournalIds.map(id => mongoose_1.Types.ObjectId.isValid(id) ? new mongoose_1.Types.ObjectId(id) : null).filter(Boolean);
+                if (ids.length > 0) {
+                    const entries = await JournalEntry_1.JournalEntry.find({ _id: { $in: ids }, userId }).lean();
+                    // Replace memoryData.journalEntries/recentJournals with fetched entries (serialized)
+                    memoryData.journalEntries = entries;
+                    memoryData.recentJournals = entries.map(e => ({
+                        id: e._id,
+                        title: e.title,
+                        excerpt: (e.content || '').substring(0, 200),
+                        mood: e.mood,
+                        createdAt: e.createdAt,
+                    }));
+                }
+            }
+            catch (e) {
+                logger_1.logger.warn('Failed to fetch incremental journal entries', e);
+            }
+        }
         // Determine current mood from most recent mood data
         const currentMood = memoryData.moodPatterns.length > 0
             ? (0, hopePersonality_1.normalizeMood)(memoryData.moodPatterns[0].mood)
@@ -254,7 +436,7 @@ const sendMemoryEnhancedMessage = async (req, res) => {
         // Build conversation history from memory
         const conversationHistory = memoryData.therapySessions
             .slice(-3)
-            .map(session => `Previous session: [${session.date}]`)
+            .map((session) => `Previous session: [${session.date}]`)
             .join('\n');
         // Use the mood-adaptive Hope prompt builder
         const hopePrompt = (0, hopePersonality_1.buildHopePrompt)(currentMood, conversationHistory + `\n\nUser: ${message}`, `${userContext}\nRespond concisely in 2-4 lines unless the user asks for step-by-step or the situation clearly requires more detail.`);

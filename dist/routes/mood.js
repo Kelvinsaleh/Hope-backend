@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const auth_1 = require("../middleware/auth");
 const moodController_1 = require("../controllers/moodController");
+const moodController_2 = require("../controllers/moodController");
 const router = express_1.default.Router();
 // All routes are protected with authentication
 router.use(auth_1.auth);
@@ -17,4 +18,6 @@ router.get("/history", moodController_1.getMoodHistory);
 router.get("/stats", moodController_1.getMoodStats);
 // Get recent moods
 router.get("/", moodController_1.getRecentMoods);
+// Check whether the user should be prompted (12-hour rule)
+router.get('/should-prompt', moodController_2.shouldPromptMood);
 exports.default = router;

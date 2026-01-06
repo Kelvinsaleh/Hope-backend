@@ -60,5 +60,12 @@ const moodSchema = new mongoose_1.Schema({
 });
 // Index for efficient querying of user's mood history
 moodSchema.index({ userId: 1, timestamp: -1 });
+// Expose a virtual 'mood' field for compatibility with other parts of the codebase
+moodSchema.virtual('mood').get(function () {
+    return this.score;
+});
+// Ensure virtuals are included when converting to JSON / objects
+moodSchema.set('toJSON', { virtuals: true });
+moodSchema.set('toObject', { virtuals: true });
 const Mood = mongoose_1.default.model("Mood", moodSchema);
 exports.Mood = Mood;
