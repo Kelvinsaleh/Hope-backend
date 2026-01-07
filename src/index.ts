@@ -61,6 +61,8 @@ const allowedOrigins = (() => {
     'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:3002',
+    'http://localhost:8080',  // Flutter web default
+    'http://127.0.0.1:8080',  // Flutter web (127.0.0.1 variant)
     process.env.FRONTEND_URL || defaultFrontend,
     'https://ai-therapist-agent-theta.vercel.app',
     'https://ai-therapist-agent-2hx8i5cf8-kelvinsalehs-projects.vercel.app',
@@ -73,6 +75,13 @@ const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
+    
+    // In development, allow all localhost origins (flexible for Flutter web random ports)
+    if (process.env.NODE_ENV !== 'production') {
+      if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+        return callback(null, true);
+      }
+    }
     
     // Check if origin is in the allowed list
     if (allowedOrigins.includes(origin)) {
