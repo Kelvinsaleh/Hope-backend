@@ -174,10 +174,12 @@ export const generateWeeklyReport = async (req: Request, res: Response) => {
 
     // Persist the generated report for later retrieval
     try {
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
       await WeeklyReport.create({
         userId,
         content: aiReport,
-        metadata: reportMetadata
+        metadata: reportMetadata,
+        expiresAt
       });
     } catch (e) {
       logger.warn('Failed to persist weekly report:', e);
@@ -205,6 +207,58 @@ export const generateWeeklyReport = async (req: Request, res: Response) => {
       error: "Failed to generate weekly report",
       details: error instanceof Error ? error.message : "Unknown error",
     });
+  }
+};
+
+// Admin / dev helper: trigger a weekly report generation for a specific userId (useful for testing)
+export const triggerWeeklyReportForUser = async (req: Request, res: Response) => {
+  try {
+    const adminKey = req.query.adminKey || req.body.adminKey;
+    if (!process.env.ADMIN_TRIGGER_KEY || adminKey !== process.env.ADMIN_TRIGGER_KEY) {
+      return res.status(403).json({ success: false, error: 'Forbidden' });
+    }
+
+    const userIdParam = req.params.userId;
+    if (!userIdParam) return res.status(400).json({ success: false, error: 'Missing userId param' });
+
+    const userId = new Types.ObjectId(String(userIdParam));
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+
+    // Use the same date range logic as generateWeeklyReport (last 7 days)
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - 7);
+
+    const weeklyData = await gatherWeeklyData(userId, startDate, endDate);
+    if (!weeklyData.hasData) {
+      return res.json({ success: true, message: 'No data for user in date range' });
+    }
+
+    let content = '';
+    try {
+      if (genAI) {
+        const profileSummary = '';
+        content = await generateAIWeeklyReport(weeklyData, user.name || 'User', profileSummary);
+      } else {
+        content = generateFallbackWeeklyReport(weeklyData, user.name || 'User');
+      }
+    } catch (e) {
+      content = generateFallbackWeeklyReport(weeklyData, user.name || 'User');
+    }
+
+    const metadata = {
+      weekStart: startDate.toISOString(),
+      weekEnd: endDate.toISOString(),
+      generatedAt: new Date().toISOString(),
+    };
+
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const doc = await WeeklyReport.create({ userId, content, metadata, expiresAt });
+    return res.json({ success: true, reportId: doc._id, content, metadata });
+  } catch (error) {
+    logger.error('Error triggering weekly report for user:', error);
+    return res.status(500).json({ success: false, error: 'Failed to generate report' });
   }
 };
 

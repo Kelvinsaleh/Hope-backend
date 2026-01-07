@@ -69,6 +69,6 @@ const UserProfileSchema = new Schema<IUserProfile>({
   status: { type: String, enum: ["online", "away", "offline", "busy"], default: "offline" }
 }, { timestamps: true });
 
-UserProfileSchema.index({ userId: 1 }, { unique: true });
+// Unique index on userId is already enforced via `unique: true` in the schema definition above.
 
 export const UserProfile = mongoose.models.UserProfile || model<IUserProfile>("UserProfile", UserProfileSchema);

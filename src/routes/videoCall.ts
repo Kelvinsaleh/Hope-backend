@@ -13,9 +13,9 @@ const router = express.Router();
 router.use(authenticateToken);
 
 // Video call routes (premium only)
-router.post("/create", requirePremium, createVideoCall);
+router.post("/create", requirePremium('video_call'), createVideoCall);
 router.get("/:callId", getVideoCallStatus);
-router.post("/:callId/join", requirePremium, joinVideoCall);
+router.post("/:callId/join", requirePremium('video_call'), joinVideoCall);
 router.post("/:callId/end", endVideoCall);
 
 export default router; 

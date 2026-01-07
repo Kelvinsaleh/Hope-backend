@@ -60,7 +60,6 @@ const UserSchema = new Schema<IUser>(
 );
 
 // Index for performance
-UserSchema.index({ email: 1 });
 UserSchema.index({ 'subscription.isActive': 1 });
 UserSchema.index({ status: 1 });
 

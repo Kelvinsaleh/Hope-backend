@@ -12,7 +12,7 @@ const PLANS = [
     {
         id: 'monthly',
         name: 'Monthly Plan',
-        price: 1300,
+    price: 500,
         currency: 'KES',
         interval: 'monthly',
         paystackPlanCode: process.env.PAYSTACK_MONTHLY_PLAN_CODE || 'PLN_monthly_premium'
@@ -20,7 +20,7 @@ const PLANS = [
     {
         id: 'annually',
         name: 'Annual Plan',
-        price: 13000,
+    price: 6000,
         currency: 'KES',
         interval: 'annually',
         paystackPlanCode: process.env.PAYSTACK_ANNUAL_PLAN_CODE || 'PLN_annual_premium'

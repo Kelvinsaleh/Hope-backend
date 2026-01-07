@@ -295,6 +295,23 @@ function setCachedMemory(key: string, memory: any) {
   memoryCache.set(key, { memory, lastUpdated: Date.now() });
 }
 
+// Expose helper to invalidate a user's memory cache entries. This should be
+// called after profile updates so that subsequent memory-enhanced requests
+// rebuild memory using the latest persisted profile.
+export function invalidateMemoryCacheForUser(userId: string) {
+  try {
+    const prefix = `${userId}:`;
+    for (const k of Array.from(memoryCache.keys())) {
+      if (k.startsWith(prefix)) {
+        memoryCache.delete(k);
+        logger.info(`Invalidated memory cache for key=${k}`);
+      }
+    }
+  } catch (e) {
+    logger.warn('Failed to invalidate memory cache for user', { userId, error: e });
+  }
+}
+
 // Fallback response generator
 function generateFallbackResponse(aiContext: string): string {
   // Extract user message from context for more personalized fallback

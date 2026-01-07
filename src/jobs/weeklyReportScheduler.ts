@@ -48,8 +48,9 @@ export async function runWeeklyReportSchedulerOnce() {
             weekEnd: endDate.toISOString(),
             generatedAt: new Date().toISOString()
           };
+          const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-          await WeeklyReport.create({ userId: user._id, content, metadata });
+          await WeeklyReport.create({ userId: user._id, content, metadata, expiresAt });
           logger.info(`Generated scheduled weekly report for user ${user._id}`);
         } catch (err) {
           logger.warn('Failed to generate scheduled weekly report for a user:', err);

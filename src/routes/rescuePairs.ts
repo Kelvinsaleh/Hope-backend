@@ -23,9 +23,9 @@ const router = express.Router();
 router.use(authenticateToken);
 
 // Enhanced matching routes
-router.post("/find-matches", findMatchesEnhanced);
-router.post("/accept", acceptMatchEnhanced);
-router.get("/active", getActiveMatches);
+router.post("/find-matches", requirePremium('matching'), findMatchesEnhanced);
+router.post("/accept", requirePremium('matching'), acceptMatchEnhanced);
+router.get("/active", requirePremium('matching'), getActiveMatches);
 
 // Original rescue pair routes
 router.get("/matches", findMatches);

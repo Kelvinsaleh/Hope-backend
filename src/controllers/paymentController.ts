@@ -21,7 +21,7 @@ const PLANS: PaymentPlan[] = [
   {
     id: 'monthly',
     name: 'Monthly Plan',
-    price: 1300,
+    price: 500,
     currency: 'KES',
     interval: 'monthly',
     paystackPlanCode: process.env.PAYSTACK_MONTHLY_PLAN_CODE || 'PLN_monthly_premium'
@@ -29,7 +29,7 @@ const PLANS: PaymentPlan[] = [
   {
     id: 'annually',
     name: 'Annual Plan',
-    price: 13000,
+    price: 6000,
     currency: 'KES',
     interval: 'annually',
     paystackPlanCode: process.env.PAYSTACK_ANNUAL_PLAN_CODE || 'PLN_annual_premium'
@@ -240,28 +240,56 @@ export const verifyPayment = async (req: Request, res: Response) => {
 // Webhook handler for Paystack events
 export const handleWebhook = async (req: Request, res: Response) => {
   try {
-    const signature = req.headers['x-paystack-signature'] as string;
-    const body = JSON.stringify(req.body);
+    const signature = (req.headers['x-paystack-signature'] || '') as string;
 
-    // Verify webhook signature (implement proper verification)
-    // For now, we'll process the webhook directly
+    // req.body may be a Buffer when express.raw is used, otherwise stringify
+    const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body));
 
-    const event = req.body;
+    // Verify signature using HMAC SHA512
+    const crypto = require('crypto');
+    const expected = crypto.createHmac('sha512', PAYSTACK_SECRET_KEY).update(rawBody).digest('hex');
+    if (!signature || expected !== signature) {
+      logger.warn('Invalid Paystack webhook signature');
+      return res.status(401).json({ success: false, error: 'Invalid signature' });
+    }
 
-    if (event.event === 'charge.success') {
+    const event = typeof req.body === 'object' && !(Buffer.isBuffer(req.body)) ? req.body : JSON.parse(rawBody.toString());
+
+    // Handle different Paystack webhook events relevant to subscriptions
+    if (event.event === 'subscription.create' || event.event === 'subscription.update' || event.event === 'subscription.disable') {
+      const sub = event.data;
+      const subCode = sub.subscription_code || sub.subscription || sub.id;
+      if (subCode) {
+        const local = await Subscription.findOne({ paystackSubscriptionCode: subCode });
+        if (local) {
+          local.status = sub.status || local.status;
+          local.paystackData = sub;
+          // update expiresAt if next_payment_date present (epoch seconds)
+          if (sub.next_payment_date) {
+            local.expiresAt = new Date(sub.next_payment_date * 1000);
+          }
+          await local.save();
+
+          // Update user tier according to subscription status
+          if (sub.status === 'active' || sub.status === 'success') {
+            await User.findByIdAndUpdate(local.userId, { $set: { 'subscription.isActive': true, 'subscription.tier': 'premium', 'subscription.subscriptionId': local._id, 'subscription.expiresAt': local.expiresAt } });
+          } else if (sub.status === 'cancelled' || sub.status === 'disabled' || sub.status === 'inactive') {
+            await User.findByIdAndUpdate(local.userId, { $set: { 'subscription.isActive': false, 'subscription.tier': 'free' } });
+          }
+        }
+      }
+    } else if (event.event === 'invoice.payment_succeeded' || event.event === 'charge.success') {
+      // For one-off payments or invoices, activate pending subscription if reference matches
       const transaction = event.data;
-      const reference = transaction.reference;
-
-      // Find and update subscription
-      const subscription = await Subscription.findOne({
-        paystackReference: reference,
-        status: 'pending'
-      });
-
-      if (subscription) {
-        subscription.status = 'active';
-        subscription.paystackTransactionId = transaction.id;
-        await subscription.save();
+      const reference = transaction.reference || transaction.transaction_reference || transaction.id;
+      if (reference) {
+        const subscription = await Subscription.findOne({ paystackReference: reference, status: 'pending' });
+        if (subscription) {
+          subscription.status = 'active';
+          subscription.paystackTransactionId = transaction.id || transaction.transaction_id;
+          await subscription.save();
+          await User.findByIdAndUpdate(subscription.userId, { $set: { 'subscription.isActive': true, 'subscription.tier': 'premium', 'subscription.subscriptionId': subscription._id, 'subscription.expiresAt': subscription.expiresAt } });
+        }
       }
     }
 
@@ -272,3 +300,103 @@ export const handleWebhook = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Webhook processing failed" });
   }
 }; 
+
+// Create true Paystack subscription using plan code
+export const createPaystackSubscription = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?._id;
+    const { planId } = req.body;
+
+    if (!userId || !planId) {
+      return res.status(400).json({ success: false, error: 'Missing user or planId' });
+    }
+
+    const plan = PLANS.find(p => p.id === planId);
+    if (!plan) return res.status(400).json({ success: false, error: 'Invalid plan' });
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+
+    // Ensure Paystack customer exists (search by email)
+    const customerSearch = await fetch(`https://api.paystack.co/customer?email=${encodeURIComponent(user.email)}`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${PAYSTACK_SECRET_KEY}` }
+    });
+    const customerSearchData = await customerSearch.json();
+
+    let customerCode: string | undefined;
+    if (customerSearchData && customerSearchData.status && Array.isArray(customerSearchData.data) && customerSearchData.data.length > 0) {
+      customerCode = customerSearchData.data[0].customer_code || customerSearchData.data[0].customer_code;
+    }
+
+    if (!customerCode) {
+      // Create customer
+      const createCustomer = await fetch('https://api.paystack.co/customer', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${PAYSTACK_SECRET_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email: user.email, first_name: user.name || undefined })
+      });
+      const created = await createCustomer.json();
+      if (!created.status) {
+        return res.status(500).json({ success: false, error: 'Failed to create Paystack customer' });
+      }
+      customerCode = created.data.customer_code || created.data.customer_code;
+    }
+
+    // Create subscription
+    const subscriptionResp = await fetch('https://api.paystack.co/subscription', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${PAYSTACK_SECRET_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ customer: customerCode, plan: plan.paystackPlanCode })
+    });
+
+    const subscriptionData = await subscriptionResp.json();
+    if (!subscriptionData.status) {
+      // If Paystack returns an error, pass it back
+      return res.status(400).json({ success: false, error: subscriptionData.message || 'Failed to create subscription' });
+    }
+
+    // Save subscription record
+    const paystackSub = subscriptionData.data;
+    const newSub = new Subscription({
+      userId: new Types.ObjectId(userId),
+      planId,
+      planName: plan.name,
+      amount: plan.price,
+      currency: plan.currency,
+      status: paystackSub.status || 'active',
+      paystackSubscriptionCode: paystackSub.subscription_code || paystackSub.id,
+      paystackData: paystackSub,
+      startDate: paystackSub.start_date ? new Date(paystackSub.start_date * 1000) : new Date(),
+      expiresAt: paystackSub.next_payment_date ? new Date(paystackSub.next_payment_date * 1000) : null
+    });
+
+    await newSub.save();
+
+    // Update user to premium if subscription is active
+    if (paystackSub.status === 'active' || paystackSub.status === 'success') {
+      await User.findByIdAndUpdate(userId, {
+        $set: {
+          'subscription.isActive': true,
+          'subscription.tier': 'premium',
+          'subscription.subscriptionId': newSub._id,
+          'subscription.planId': planId,
+          'subscription.activatedAt': new Date(),
+          'subscription.expiresAt': newSub.expiresAt
+        }
+      });
+    }
+
+    // If Paystack provided an authorization_url for further action, return it
+    return res.json({ success: true, subscription: paystackSub, authorization_url: subscriptionData.data.authorization_url || null });
+  } catch (error) {
+    logger.error('Error creating Paystack subscription:', error);
+    res.status(500).json({ success: false, error: 'Failed to create subscription' });
+  }
+};
