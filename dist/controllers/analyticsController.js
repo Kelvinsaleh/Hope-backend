@@ -1,6 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.generateWeeklyReport = exports.getPremiumAnalytics = exports.getActivityAnalytics = exports.getMoodAnalytics = exports.getUserAnalytics = void 0;
+exports.triggerWeeklyReportForUser = exports.generateWeeklyReport = exports.getSavedWeeklyReports = exports.getPremiumAnalytics = exports.getActivityAnalytics = exports.getMoodAnalytics = exports.getUserAnalytics = void 0;
+exports.gatherWeeklyData = gatherWeeklyData;
+exports.generateAIWeeklyReport = generateAIWeeklyReport;
+exports.generateFallbackWeeklyReport = generateFallbackWeeklyReport;
 const logger_1 = require("../utils/logger");
 const generative_ai_1 = require("@google/generative-ai");
 const mongoose_1 = require("mongoose");
@@ -10,6 +13,7 @@ const Meditation_1 = require("../models/Meditation");
 const ChatSession_1 = require("../models/ChatSession");
 const User_1 = require("../models/User");
 const UserProfile_1 = require("../models/UserProfile");
+const WeeklyReport_1 = require("../models/WeeklyReport");
 // Initialize Gemini API
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const genAI = GEMINI_API_KEY ? new generative_ai_1.GoogleGenerativeAI(GEMINI_API_KEY) : null;
@@ -97,6 +101,19 @@ const getPremiumAnalytics = async (req, res) => {
     }
 };
 exports.getPremiumAnalytics = getPremiumAnalytics;
+// Fetch saved weekly reports for the authenticated user
+const getSavedWeeklyReports = async (req, res) => {
+    try {
+        const userId = new mongoose_1.Types.ObjectId(req.user._id);
+        const reports = await WeeklyReport_1.WeeklyReport.find({ userId }).sort({ createdAt: -1 }).lean();
+        res.json({ success: true, reports });
+    }
+    catch (error) {
+        logger_1.logger.error('Error fetching saved weekly reports:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch reports' });
+    }
+};
+exports.getSavedWeeklyReports = getSavedWeeklyReports;
 // Generate AI Weekly Report
 const generateWeeklyReport = async (req, res) => {
     try {
@@ -127,7 +144,9 @@ const generateWeeklyReport = async (req, res) => {
         // Generate AI report
         let aiReport;
         let isFailover = false;
-        if (genAI && weeklyData.hasData) {
+        // FIXED: Always attempt AI generation first, regardless of data availability.
+        // This ensures the AI API is used directly, with fallback only on error.
+        if (genAI) {
             try {
                 // Build a concise profile summary to pass to the AI model for personalization
                 const profileSummary = userProfile ? `bio: ${(userProfile.bio || '').toString().slice(0, 200)}; goals: ${(userProfile.goals || []).slice(0, 5).join(', ')}; challenges: ${(userProfile.challenges || []).slice(0, 5).join(', ')}; communicationStyle: ${userProfile.communicationStyle || 'unknown'}` : '';
@@ -141,6 +160,7 @@ const generateWeeklyReport = async (req, res) => {
             }
         }
         else {
+            logger_1.logger.warn("GEMINI_API_KEY not configured - using fallback report generation");
             aiReport = generateFallbackWeeklyReport(weeklyData, user.name || 'User');
             isFailover = true;
         }
@@ -157,6 +177,19 @@ const generateWeeklyReport = async (req, res) => {
             },
             isFailover
         };
+        // Persist the generated report for later retrieval
+        try {
+            const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+            await WeeklyReport_1.WeeklyReport.create({
+                userId,
+                content: aiReport,
+                metadata: reportMetadata,
+                expiresAt
+            });
+        }
+        catch (e) {
+            logger_1.logger.warn('Failed to persist weekly report:', e);
+        }
         res.json({
             success: true,
             report: {
@@ -182,6 +215,56 @@ const generateWeeklyReport = async (req, res) => {
     }
 };
 exports.generateWeeklyReport = generateWeeklyReport;
+// Admin / dev helper: trigger a weekly report generation for a specific userId (useful for testing)
+const triggerWeeklyReportForUser = async (req, res) => {
+    try {
+        const adminKey = req.query.adminKey || req.body.adminKey;
+        if (!process.env.ADMIN_TRIGGER_KEY || adminKey !== process.env.ADMIN_TRIGGER_KEY) {
+            return res.status(403).json({ success: false, error: 'Forbidden' });
+        }
+        const userIdParam = req.params.userId;
+        if (!userIdParam)
+            return res.status(400).json({ success: false, error: 'Missing userId param' });
+        const userId = new mongoose_1.Types.ObjectId(String(userIdParam));
+        const user = await User_1.User.findById(userId);
+        if (!user)
+            return res.status(404).json({ success: false, error: 'User not found' });
+        // Use the same date range logic as generateWeeklyReport (last 7 days)
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(endDate.getDate() - 7);
+        const weeklyData = await gatherWeeklyData(userId, startDate, endDate);
+        // FIXED: No longer check hasData - always attempt AI generation
+        let content = '';
+        try {
+            if (genAI) {
+                const profileSummary = '';
+                content = await generateAIWeeklyReport(weeklyData, user.name || 'User', profileSummary);
+            }
+            else {
+                logger_1.logger.warn("GEMINI_API_KEY not configured - using fallback");
+                content = generateFallbackWeeklyReport(weeklyData, user.name || 'User');
+            }
+        }
+        catch (e) {
+            logger_1.logger.error('AI generation failed in trigger:', e);
+            content = generateFallbackWeeklyReport(weeklyData, user.name || 'User');
+        }
+        const metadata = {
+            weekStart: startDate.toISOString(),
+            weekEnd: endDate.toISOString(),
+            generatedAt: new Date().toISOString(),
+        };
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        const doc = await WeeklyReport_1.WeeklyReport.create({ userId, content, metadata, expiresAt });
+        return res.json({ success: true, reportId: doc._id, content, metadata });
+    }
+    catch (error) {
+        logger_1.logger.error('Error triggering weekly report for user:', error);
+        return res.status(500).json({ success: false, error: 'Failed to generate report' });
+    }
+};
+exports.triggerWeeklyReportForUser = triggerWeeklyReportForUser;
 // Helper function to gather weekly data
 async function gatherWeeklyData(userId, startDate, endDate) {
     try {

@@ -38,7 +38,6 @@ router.get("/tier", async (req, res) => {
         });
     }
 });
-exports.default = router;
 // Profile routes
 router.get("/profile", async (req, res) => {
     try {
@@ -92,13 +91,39 @@ router.post("/profile", async (req, res) => {
             return res.status(400).json({ success: false, error: 'Invalid profile data', details: errors });
         }
         const userId = new mongoose_1.Types.ObjectId(req.user._id);
+        // Whitelist profile fields to avoid storing unexpected data
+        const allowedFields = [
+            'bio', 'age', 'challenges', 'goals', 'communicationStyle',
+            'experienceLevel', 'interests', 'availability', 'matchingPreferences',
+            'safetySettings', 'isVerified', 'verificationDate', 'lastActive', 'status'
+        ];
+        const sanitized = {};
+        for (const k of allowedFields) {
+            if (Object.prototype.hasOwnProperty.call(body, k))
+                sanitized[k] = body[k];
+        }
         const existing = await UserProfile_1.UserProfile.findOne({ userId });
         if (existing) {
-            await UserProfile_1.UserProfile.updateOne({ userId }, { $set: req.body });
+            await UserProfile_1.UserProfile.updateOne({ userId }, { $set: sanitized });
             const updated = await UserProfile_1.UserProfile.findOne({ userId }).lean();
+            // Invalidate memory cache so subsequent chat requests rebuild memory
+            try {
+                const { invalidateMemoryCacheForUser } = require('../controllers/memoryEnhancedChat');
+                invalidateMemoryCacheForUser(String(userId));
+            }
+            catch (e) {
+                console.warn('Failed to call invalidateMemoryCacheForUser', e);
+            }
             return res.json({ success: true, data: updated });
         }
-        const created = await UserProfile_1.UserProfile.create({ userId, ...req.body });
+        const created = await UserProfile_1.UserProfile.create({ userId, ...sanitized });
+        try {
+            const { invalidateMemoryCacheForUser } = require('../controllers/memoryEnhancedChat');
+            invalidateMemoryCacheForUser(String(userId));
+        }
+        catch (e) {
+            console.warn('Failed to call invalidateMemoryCacheForUser', e);
+        }
         res.json({ success: true, data: created });
     }
     catch (error) {
@@ -133,10 +158,28 @@ router.put("/profile", async (req, res) => {
         if (Object.keys(errors).length > 0) {
             return res.status(400).json({ success: false, error: 'Invalid profile data', details: errors });
         }
-        const updateResult = await UserProfile_1.UserProfile.updateOne({ userId }, { $set: req.body }, { upsert: true });
+        // Build sanitized update object
+        const allowedFields = [
+            'bio', 'age', 'challenges', 'goals', 'communicationStyle',
+            'experienceLevel', 'interests', 'availability', 'matchingPreferences',
+            'safetySettings', 'isVerified', 'verificationDate', 'lastActive', 'status'
+        ];
+        const sanitized = {};
+        for (const k of allowedFields) {
+            if (Object.prototype.hasOwnProperty.call(body, k))
+                sanitized[k] = body[k];
+        }
+        const updateResult = await UserProfile_1.UserProfile.updateOne({ userId }, { $set: sanitized }, { upsert: true });
         console.log("📊 Update result:", updateResult);
         const updated = await UserProfile_1.UserProfile.findOne({ userId }).lean();
         console.log("✅ Updated profile from DB:", updated);
+        try {
+            const { invalidateMemoryCacheForUser } = require('../controllers/memoryEnhancedChat');
+            invalidateMemoryCacheForUser(String(userId));
+        }
+        catch (e) {
+            console.warn('Failed to call invalidateMemoryCacheForUser', e);
+        }
         res.json({ success: true, data: updated });
     }
     catch (error) {
@@ -158,9 +201,17 @@ router.put("/", async (req, res) => {
             return res.status(400).json({ success: false, error: "No changes provided" });
         }
         const user = await User_1.User.findByIdAndUpdate(userId, { $set: update }, { new: true }).lean();
+        try {
+            const { invalidateMemoryCacheForUser } = require('../controllers/memoryEnhancedChat');
+            invalidateMemoryCacheForUser(String(userId));
+        }
+        catch (e) {
+            console.warn('Failed to call invalidateMemoryCacheForUser', e);
+        }
         res.json({ success: true, data: user });
     }
     catch (error) {
         res.status(500).json({ success: false, error: "Failed to update user" });
     }
 });
+exports.default = router;

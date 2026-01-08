@@ -164,8 +164,10 @@ export const login = async (req: Request, res: Response) => {
     );
 
     // Create session - delete all previous sessions for this user (force logout on other devices)
+    // FIXED: Using a very long TTL (1 year) to keep sessions effectively indefinite
+    // Sessions will only expire on explicit logout or new device login
     const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24);
+    expiresAt.setFullYear(expiresAt.getFullYear() + 1); // Set expiry to 1 year from now
 
     // Delete all previous sessions for this user
     await Session.deleteMany({ userId: user._id }).catch(() => {});
@@ -438,9 +440,9 @@ export const verifyEmail = async (req: Request, res: Response) => {
       { expiresIn: "24h" }
     );
 
-    // Create session
+    // Create session - FIXED: Using a very long TTL (1 year) for persistent sessions
     const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24);
+    expiresAt.setFullYear(expiresAt.getFullYear() + 1); // Set expiry to 1 year from now
 
     const session = new Session({
       userId: user._id,

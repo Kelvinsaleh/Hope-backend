@@ -25,8 +25,27 @@ const getMeditations = async (req, res) => {
         }
         if (category)
             filter.category = category;
-        if (isPremium !== undefined)
-            filter.isPremium = isPremium === 'true';
+        // If client requests premium-only content, ensure they are premium
+        if (isPremium !== undefined) {
+            const wantPremium = isPremium === 'true';
+            if (wantPremium) {
+                // Require authenticated user for premium content
+                if (!req.user || !req.user._id) {
+                    return res.status(401).json({ success: false, error: 'Authentication required to access premium content' });
+                }
+                // Check active subscription
+                const { Subscription } = require('../models/Subscription');
+                const userId = new mongoose_1.Types.ObjectId(req.user._id);
+                const activeSub = await Subscription.findOne({ userId, status: 'active', expiresAt: { $gt: new Date() } });
+                if (!activeSub) {
+                    return res.status(403).json({ success: false, error: 'Premium subscription required to access this content' });
+                }
+                filter.isPremium = true;
+            }
+            else {
+                filter.isPremium = false;
+            }
+        }
         const skip = (Number(page) - 1) * Number(limit);
         console.log("🔍 Querying MongoDB with filter:", filter);
         const meditations = await Meditation_1.Meditation.find(filter)

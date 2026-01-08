@@ -142,8 +142,10 @@ const login = async (req, res) => {
         // Generate JWT token with additional entropy to prevent duplicates
         const token = jsonwebtoken_1.default.sign({ userId: user._id, timestamp: Date.now(), random: Math.random() }, process.env.JWT_SECRET || "your-secret-key", { expiresIn: "24h" });
         // Create session - delete all previous sessions for this user (force logout on other devices)
+        // FIXED: Using a very long TTL (1 year) to keep sessions effectively indefinite
+        // Sessions will only expire on explicit logout or new device login
         const expiresAt = new Date();
-        expiresAt.setHours(expiresAt.getHours() + 24);
+        expiresAt.setFullYear(expiresAt.getFullYear() + 1); // Set expiry to 1 year from now
         // Delete all previous sessions for this user
         await Session_1.Session.deleteMany({ userId: user._id }).catch(() => { });
         const session = new Session_1.Session({
@@ -387,9 +389,9 @@ const verifyEmail = async (req, res) => {
         await email_service_1.emailService.sendWelcomeEmail(user.email, user.name);
         // Generate JWT token
         const token = jsonwebtoken_1.default.sign({ userId: user._id }, process.env.JWT_SECRET || "your-secret-key", { expiresIn: "24h" });
-        // Create session
+        // Create session - FIXED: Using a very long TTL (1 year) for persistent sessions
         const expiresAt = new Date();
-        expiresAt.setHours(expiresAt.getHours() + 24);
+        expiresAt.setFullYear(expiresAt.getFullYear() + 1); // Set expiry to 1 year from now
         const session = new Session_1.Session({
             userId: user._id,
             token,

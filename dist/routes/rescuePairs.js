@@ -7,12 +7,13 @@ const express_1 = __importDefault(require("express"));
 const rescuePairController_1 = require("../controllers/rescuePairController");
 const matchMessagingController_1 = require("../controllers/matchMessagingController");
 const auth_1 = require("../middleware/auth");
+const premiumAccess_1 = require("../middleware/premiumAccess");
 const router = express_1.default.Router();
 router.use(auth_1.authenticateToken);
 // Enhanced matching routes
-router.post("/find-matches", rescuePairController_1.findMatchesEnhanced);
-router.post("/accept", rescuePairController_1.acceptMatchEnhanced);
-router.get("/active", rescuePairController_1.getActiveMatches);
+router.post("/find-matches", (0, premiumAccess_1.requirePremium)('matching'), rescuePairController_1.findMatchesEnhanced);
+router.post("/accept", (0, premiumAccess_1.requirePremium)('matching'), rescuePairController_1.acceptMatchEnhanced);
+router.get("/active", (0, premiumAccess_1.requirePremium)('matching'), rescuePairController_1.getActiveMatches);
 // Original rescue pair routes
 router.get("/matches", rescuePairController_1.findMatches);
 router.post("/", rescuePairController_1.createRescuePair);

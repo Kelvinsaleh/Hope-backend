@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateUserTier = exports.checkPremiumAccess = exports.updateSubscription = exports.createSubscription = exports.getSubscriptionStatus = void 0;
+exports.updateUserTier = exports.checkPremiumAccess = exports.cancelSubscription = exports.updateSubscription = exports.createSubscription = exports.getSubscriptionStatus = void 0;
 const Subscription_1 = require("../models/Subscription");
 const User_1 = require("../models/User");
 const mongoose_1 = require("mongoose");
@@ -96,6 +96,62 @@ const updateSubscription = async (req, res) => {
     }
 };
 exports.updateSubscription = updateSubscription;
+const cancelSubscription = async (req, res) => {
+    try {
+        const requesterUserId = req.user && req.user._id ? new mongoose_1.Types.ObjectId(req.user._id) : null;
+        const { subscriptionId, userId: bodyUserId } = req.body;
+        // Determine which user to act on
+        const targetUserId = bodyUserId ? new mongoose_1.Types.ObjectId(bodyUserId) : requesterUserId;
+        if (!targetUserId) {
+            return res.status(400).json({ success: false, error: 'User id is required' });
+        }
+        let subscription;
+        if (subscriptionId) {
+            subscription = await Subscription_1.Subscription.findOneAndUpdate({ _id: subscriptionId, userId: targetUserId, status: 'active' }, { status: 'cancelled', cancelledAt: new Date() }, { new: true });
+        }
+        else {
+            // Cancel the most recent active subscription for the user
+            subscription = await Subscription_1.Subscription.findOneAndUpdate({ userId: targetUserId, status: 'active', expiresAt: { $gt: new Date() } }, { status: 'cancelled', cancelledAt: new Date() }, { sort: { createdAt: -1 }, new: true });
+        }
+        if (!subscription) {
+            return res.status(404).json({ success: false, error: 'Active subscription not found' });
+        }
+        // If subscription has a Paystack subscription code, try to disable it
+        if (subscription.paystackSubscriptionCode) {
+            try {
+                const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || '';
+                await fetch(`https://api.paystack.co/subscription/disable`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${PAYSTACK_SECRET_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ code: subscription.paystackSubscriptionCode })
+                });
+            }
+            catch (err) {
+                logger_1.logger.warn('Failed to disable Paystack subscription:', err);
+            }
+        }
+        // Update local subscription and user record to free tier
+        subscription.status = 'cancelled';
+        subscription.cancelledAt = new Date();
+        await subscription.save();
+        await User_1.User.findByIdAndUpdate(targetUserId, {
+            $set: {
+                'subscription.isActive': false,
+                'subscription.tier': 'free',
+                'subscription.expiresAt': new Date()
+            }
+        });
+        res.json({ success: true, message: 'Subscription cancelled' });
+    }
+    catch (error) {
+        logger_1.logger.error('Error cancelling subscription:', error);
+        res.status(500).json({ success: false, error: 'Failed to cancel subscription' });
+    }
+};
+exports.cancelSubscription = cancelSubscription;
 const checkPremiumAccess = async (req, res) => {
     try {
         const { feature } = req.params;

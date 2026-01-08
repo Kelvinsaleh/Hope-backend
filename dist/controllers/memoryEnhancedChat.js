@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendMemoryEnhancedMessage = void 0;
+exports.invalidateMemoryCacheForUser = invalidateMemoryCacheForUser;
 const generative_ai_1 = require("@google/generative-ai");
 const ChatSession_1 = require("../models/ChatSession");
 const JournalEntry_1 = require("../models/JournalEntry");
@@ -234,6 +235,23 @@ function setCachedMemory(key, memory) {
         }
     }
     memoryCache.set(key, { memory, lastUpdated: Date.now() });
+}
+// Expose helper to invalidate a user's memory cache entries. This should be
+// called after profile updates so that subsequent memory-enhanced requests
+// rebuild memory using the latest persisted profile.
+function invalidateMemoryCacheForUser(userId) {
+    try {
+        const prefix = `${userId}:`;
+        for (const k of Array.from(memoryCache.keys())) {
+            if (k.startsWith(prefix)) {
+                memoryCache.delete(k);
+                logger_1.logger.info(`Invalidated memory cache for key=${k}`);
+            }
+        }
+    }
+    catch (e) {
+        logger_1.logger.warn('Failed to invalidate memory cache for user', { userId, error: e });
+    }
 }
 // Fallback response generator
 function generateFallbackResponse(aiContext) {

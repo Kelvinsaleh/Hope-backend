@@ -37,6 +37,7 @@ const db_1 = require("./utils/db");
 const healthController_1 = require("./controllers/healthController");
 const seedCommunity_1 = __importDefault(require("./scripts/seedCommunity"));
 const Community_1 = require("./models/Community");
+const weeklyReportScheduler_1 = require("./jobs/weeklyReportScheduler");
 // Load environment variables
 dotenv_1.default.config();
 const app = (0, express_1.default)();
@@ -54,6 +55,8 @@ const allowedOrigins = (() => {
             'https://ai-therapist-agent-2hx8i5cf8-kelvinsalehs-projects.vercel.app',
             'https://hopementalhealthsupport.xyz',
             'http://hopementalhealthsupport.xyz',
+            'https://www.hopementalhealthsupport.xyz',
+            'http://www.hopementalhealthsupport.xyz',
             'https://ultra-predict.co.ke',
             'http://ultra-predict.co.ke'
         ].filter((url) => Boolean(url));
@@ -62,13 +65,17 @@ const allowedOrigins = (() => {
         'http://localhost:3000',
         'http://localhost:3001',
         'http://localhost:3002',
+        'http://localhost:8080', // Flutter web default
+        'http://127.0.0.1:8080', // Flutter web (127.0.0.1 variant)
         process.env.FRONTEND_URL || defaultFrontend,
-    'https://ai-therapist-agent-theta.vercel.app',
-    'https://ai-therapist-agent-2hx8i5cf8-kelvinsalehs-projects.vercel.app',
-    'https://hopementalhealthsupport.xyz',
-    'http://hopementalhealthsupport.xyz',
-    'https://ultra-predict.co.ke',
-    'http://ultra-predict.co.ke'
+        'https://ai-therapist-agent-theta.vercel.app',
+        'https://ai-therapist-agent-2hx8i5cf8-kelvinsalehs-projects.vercel.app',
+        'https://hopementalhealthsupport.xyz',
+        'http://hopementalhealthsupport.xyz',
+        'https://www.hopementalhealthsupport.xyz',
+        'http://www.hopementalhealthsupport.xyz',
+        'https://ultra-predict.co.ke',
+        'http://ultra-predict.co.ke'
     ].filter((url) => Boolean(url));
 })();
 const corsOptions = {
@@ -76,6 +83,12 @@ const corsOptions = {
         // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin)
             return callback(null, true);
+        // In development, allow all localhost origins (flexible for Flutter web random ports)
+        if (process.env.NODE_ENV !== 'production') {
+            if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+                return callback(null, true);
+            }
+        }
         // Check if origin is in the allowed list
         if (allowedOrigins.includes(origin)) {
             return callback(null, true);
@@ -216,6 +229,14 @@ const autoSeedCommunity = async () => {
     .then(async () => {
     // Auto-seed community spaces on startup
     await autoSeedCommunity();
+    // Start weekly report scheduler
+    try {
+        (0, weeklyReportScheduler_1.startWeeklyReportScheduler)();
+        logger_1.logger.info('Weekly report scheduler started');
+    }
+    catch (e) {
+        logger_1.logger.warn('Failed to start weekly report scheduler', e);
+    }
     app.listen(PORT, () => {
         logger_1.logger.info(`🚀 Server is running on port ${PORT}`);
         logger_1.logger.info(`📊 Health check: http://localhost:${PORT}/health`);

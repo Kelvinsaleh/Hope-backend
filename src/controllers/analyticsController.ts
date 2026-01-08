@@ -142,11 +142,13 @@ export const generateWeeklyReport = async (req: Request, res: Response) => {
     let aiReport: string;
     let isFailover = false;
 
-    if (genAI && weeklyData.hasData) {
+    // FIXED: Always attempt AI generation first, regardless of data availability.
+    // This ensures the AI API is used directly, with fallback only on error.
+    if (genAI) {
       try {
-    // Build a concise profile summary to pass to the AI model for personalization
-    const profileSummary = userProfile ? `bio: ${(userProfile.bio || '').toString().slice(0,200)}; goals: ${(userProfile.goals||[]).slice(0,5).join(', ')}; challenges: ${(userProfile.challenges||[]).slice(0,5).join(', ')}; communicationStyle: ${userProfile.communicationStyle || 'unknown'}` : '';
-    aiReport = await generateAIWeeklyReport(weeklyData, user.name || 'User', profileSummary);
+        // Build a concise profile summary to pass to the AI model for personalization
+        const profileSummary = userProfile ? `bio: ${(userProfile.bio || '').toString().slice(0,200)}; goals: ${(userProfile.goals||[]).slice(0,5).join(', ')}; challenges: ${(userProfile.challenges||[]).slice(0,5).join(', ')}; communicationStyle: ${userProfile.communicationStyle || 'unknown'}` : '';
+        aiReport = await generateAIWeeklyReport(weeklyData, user.name || 'User', profileSummary);
         logger.info("AI weekly report generated successfully");
       } catch (error) {
         logger.error("AI report generation failed:", error);
@@ -154,7 +156,8 @@ export const generateWeeklyReport = async (req: Request, res: Response) => {
         isFailover = true;
       }
     } else {
-  aiReport = generateFallbackWeeklyReport(weeklyData, user.name || 'User');
+      logger.warn("GEMINI_API_KEY not configured - using fallback report generation");
+      aiReport = generateFallbackWeeklyReport(weeklyData, user.name || 'User');
       isFailover = true;
     }
 
@@ -231,19 +234,19 @@ export const triggerWeeklyReportForUser = async (req: Request, res: Response) =>
     startDate.setDate(endDate.getDate() - 7);
 
     const weeklyData = await gatherWeeklyData(userId, startDate, endDate);
-    if (!weeklyData.hasData) {
-      return res.json({ success: true, message: 'No data for user in date range' });
-    }
 
+    // FIXED: No longer check hasData - always attempt AI generation
     let content = '';
     try {
       if (genAI) {
         const profileSummary = '';
         content = await generateAIWeeklyReport(weeklyData, user.name || 'User', profileSummary);
       } else {
+        logger.warn("GEMINI_API_KEY not configured - using fallback");
         content = generateFallbackWeeklyReport(weeklyData, user.name || 'User');
       }
     } catch (e) {
+      logger.error('AI generation failed in trigger:', e);
       content = generateFallbackWeeklyReport(weeklyData, user.name || 'User');
     }
 

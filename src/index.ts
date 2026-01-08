@@ -54,7 +54,9 @@ const allowedOrigins = (() => {
       'https://ai-therapist-agent-theta.vercel.app',
       'https://ai-therapist-agent-2hx8i5cf8-kelvinsalehs-projects.vercel.app',
       'https://hopementalhealthsupport.xyz',
-      'http://hopementalhealthsupport.xyz',
+  'http://hopementalhealthsupport.xyz',
+  'https://www.hopementalhealthsupport.xyz',
+  'http://www.hopementalhealthsupport.xyz',
       'https://ultra-predict.co.ke',
       'http://ultra-predict.co.ke'
     ].filter((url): url is string => Boolean(url));
@@ -68,8 +70,10 @@ const allowedOrigins = (() => {
     process.env.FRONTEND_URL || defaultFrontend,
     'https://ai-therapist-agent-theta.vercel.app',
     'https://ai-therapist-agent-2hx8i5cf8-kelvinsalehs-projects.vercel.app',
-      'https://hopementalhealthsupport.xyz',
-      'http://hopementalhealthsupport.xyz',
+  'https://hopementalhealthsupport.xyz',
+  'http://hopementalhealthsupport.xyz',
+  'https://www.hopementalhealthsupport.xyz',
+  'http://www.hopementalhealthsupport.xyz',
     'https://ultra-predict.co.ke',
     'http://ultra-predict.co.ke'
   ].filter((url): url is string => Boolean(url));

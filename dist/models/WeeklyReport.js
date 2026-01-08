@@ -33,37 +33,15 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.User = void 0;
+exports.WeeklyReport = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
-const UserSchema = new mongoose_1.Schema({
-    name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
-    isEmailVerified: { type: Boolean, default: false },
-    verificationCode: { type: String },
-    verificationCodeExpiry: { type: Date },
-    resetPasswordToken: { type: String },
-    resetPasswordExpiry: { type: Date },
-    lastActive: { type: Date, default: Date.now },
-    status: {
-        type: String,
-        enum: ['online', 'away', 'offline', 'suspended'],
-        default: 'offline'
-    },
-    subscription: {
-        isActive: { type: Boolean, default: false },
-        tier: { type: String, enum: ['free', 'premium'], default: 'free' },
-        subscriptionId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Subscription' },
-        planId: { type: String },
-        activatedAt: { type: Date },
-        expiresAt: { type: Date }
-    },
-    blockedUsers: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }],
-    suspendedAt: { type: Date },
-    suspensionReason: { type: String },
-    suspensionDuration: { type: String }
+const WeeklyReportSchema = new mongoose_1.Schema({
+    userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    content: { type: String, required: true },
+    metadata: { type: mongoose_1.Schema.Types.Mixed },
+    // TTL: expire the report automatically after a short retention period
+    expiresAt: { type: Date, default: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
 }, { timestamps: true });
-// Index for performance
-UserSchema.index({ 'subscription.isActive': 1 });
-UserSchema.index({ status: 1 });
-exports.User = mongoose_1.default.model("User", UserSchema);
+// Ensure MongoDB removes expired reports automatically using a TTL index
+WeeklyReportSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+exports.WeeklyReport = mongoose_1.default.model('WeeklyReport', WeeklyReportSchema);

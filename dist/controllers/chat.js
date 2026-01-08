@@ -51,7 +51,6 @@ const createChatSession = async (req, res) => {
             messages: []
         });
         await newSession.save();
-        logger_1.logger.info(`Chat session created: ${sessionId} for user: ${userId}`);
         res.status(201).json({
             success: true,
             message: "Chat session created",
@@ -139,15 +138,12 @@ const sendMessage = async (req, res) => {
         try {
             const { GoogleGenerativeAI } = await Promise.resolve().then(() => __importStar(require('@google/generative-ai')));
             if (!process.env.GEMINI_API_KEY) {
-                logger_1.logger.error("GEMINI_API_KEY environment variable is not set!");
                 throw new Error("GEMINI_API_KEY not configured");
             }
-            logger_1.logger.info("Initializing Gemini AI with key:", process.env.GEMINI_API_KEY.substring(0, 10) + "...");
             const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
             const model = genAI.getGenerativeModel({
                 model: "gemini-2.5-flash"
             });
-            logger_1.logger.info("Gemini model initialized successfully");
             // Get conversation history (last 12 messages for better context)
             const conversationHistory = session.messages
                 .slice(-12)
@@ -200,8 +196,6 @@ const sendMessage = async (req, res) => {
                     if (topThemes.length > 0) {
                         userContext += `**Recurring Themes:** ${topThemes.join(', ')}\n`;
                     }
-                    // Add brief journal context
-                    userContext += `**Recent Journal Entries:** ${recentJournals.length} entries in recent days\n`;
                 }
                 // Get previous chat sessions summary for continuity
                 const previousSessions = await ChatSession_1.ChatSession.find({
@@ -239,12 +233,10 @@ const sendMessage = async (req, res) => {
                 }
             }
             catch (contextError) {
-                logger_1.logger.warn("Could not fetch user context:", contextError);
+                // Context fetching failed, continue with basic prompt
             }
             // Build the mood-adaptive Hope prompt with emotional intelligence
             const enhancedPrompt = (0, hopePersonality_1.buildHopePrompt)(currentUserMood, conversationHistory + `\n\nUser: ${message}`, userContext + '\nRespond concisely in 2-4 lines unless the user asks for step-by-step or the situation clearly requires more detail.');
-            logger_1.logger.info("Sending request to Gemini AI...");
-            logger_1.logger.info(`Prompt length: ${enhancedPrompt.length} characters`);
             const result = await model.generateContent({
                 contents: [{ role: "user", parts: [{ text: enhancedPrompt }] }],
                 generationConfig: {
@@ -254,15 +246,9 @@ const sendMessage = async (req, res) => {
             });
             const response = await result.response;
             const generatedText = response.text()?.trim();
-            logger_1.logger.info(`Raw AI response length: ${generatedText?.length || 0}`);
             // Validate response is not empty
             if (generatedText && generatedText.length > 0) {
                 aiResponse = generatedText;
-                logger_1.logger.info(`AI response generated for session ${sessionId} with enhanced memory context`);
-            }
-            else {
-                logger_1.logger.warn("AI returned empty response, using fallback");
-                logger_1.logger.warn(`Response object: ${JSON.stringify(response)}`);
             }
         }
         catch (aiError) {
@@ -276,7 +262,6 @@ const sendMessage = async (req, res) => {
         // Final validation: ensure response is never empty
         if (!aiResponse || aiResponse.trim().length === 0) {
             aiResponse = "I'm here with you. What's on your mind?";
-            logger_1.logger.warn(`Using fallback response for session ${sessionId} due to empty AI response`);
         }
         // Add AI response to session
         const assistantMessage = {
@@ -289,21 +274,17 @@ const sendMessage = async (req, res) => {
         // Generate title after a few messages if not already set
         if ((0, chatTitleGenerator_1.shouldGenerateTitle)(session.messages.length, session.title)) {
             try {
-                logger_1.logger.info(`Generating title for session ${sessionId} with ${session.messages.length} messages`);
                 const title = await (0, chatTitleGenerator_1.generateChatTitle)(session.messages.map(m => ({
                     role: m.role,
                     content: m.content
                 })));
                 session.title = title;
-                logger_1.logger.info(`Generated title: "${title}" for session ${sessionId}`);
             }
             catch (titleError) {
-                logger_1.logger.warn(`Failed to generate title for session ${sessionId}:`, titleError);
                 // Continue without title - not critical
             }
         }
         await session.save();
-        logger_1.logger.info(`Message and AI response added to session: ${sessionId}`);
         res.json({
             success: true,
             message: "Message sent",
@@ -374,14 +355,15 @@ const getAllChatSessions = async (req, res) => {
         }).sort({ startTime: -1 });
         // Filter out empty sessions (sessions with no messages)
         const sessionsWithMessages = allSessions.filter(session => session.messages && session.messages.length > 0);
-        logger_1.logger.info(`Found ${sessionsWithMessages.length} non-empty sessions (out of ${allSessions.length} total) for user: ${userId}`);
         // Clean up old empty sessions (older than 1 hour) in the background
         const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
         ChatSession_1.ChatSession.deleteMany({
             userId,
             messages: { $size: 0 },
             createdAt: { $lt: oneHourAgo }
-        }).catch(err => logger_1.logger.warn("Failed to cleanup empty sessions:", err));
+        }).catch(err => {
+            // Background cleanup failed silently
+        });
         // Generate titles for sessions without them (background task)
         const sessionsNeedingTitles = sessionsWithMessages.filter(session => !session.title && session.messages.length >= 3);
         if (sessionsNeedingTitles.length > 0) {

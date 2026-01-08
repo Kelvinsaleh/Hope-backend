@@ -10,8 +10,8 @@ const premiumAccess_1 = require("../middleware/premiumAccess");
 const router = express_1.default.Router();
 router.use(auth_1.authenticateToken);
 // Video call routes (premium only)
-router.post("/create", premiumAccess_1.requirePremium, videoCallController_1.createVideoCall);
+router.post("/create", (0, premiumAccess_1.requirePremium)('video_call'), videoCallController_1.createVideoCall);
 router.get("/:callId", videoCallController_1.getVideoCallStatus);
-router.post("/:callId/join", premiumAccess_1.requirePremium, videoCallController_1.joinVideoCall);
+router.post("/:callId/join", (0, premiumAccess_1.requirePremium)('video_call'), videoCallController_1.joinVideoCall);
 router.post("/:callId/end", videoCallController_1.endVideoCall);
 exports.default = router;

@@ -39,14 +39,11 @@ const PLANS: PaymentPlan[] = [
 // Initialize payment with Paystack
 export const initializePayment = async (req: Request, res: Response) => {
   try {
-     const { email, planId, metadata } = req.body;
-    // Use authenticated user's ID from JWT/session
-    const userId = req.user?._id; // Ensure your auth middleware sets req.user._id
-
-    logger.info("Payment initialization request:", { email, planId, userId, metadata });
+    const { email, planId, metadata, userId: bodyUserId } = req.body;
+    
+    const userId = req.user?._id?.toString() || bodyUserId;
 
     if (!email || !planId || !userId) {
-      logger.error("Missing required fields:", { email: !!email, planId: !!planId, userId: !!userId });
       return res.status(400).json({
         success: false,
         error: "Missing required fields: email, planId, userId"
