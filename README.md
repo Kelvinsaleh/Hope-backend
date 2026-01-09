@@ -184,11 +184,11 @@ The backend uses **Resend** for sending password reset and email verification em
 
 1. **Sign up for Resend**: https://resend.com/
 2. **Get API Key**: https://resend.com/api-keys
-3. **Verify Domain**: Add `ultra-predict.co.ke` at https://resend.com/domains
+3. **Verify Domain**: Add `hopementalhealthsupport.xyz` at https://resend.com/domains
 4. **Set Environment Variables**:
    ```bash
    RESEND_API_KEY=re_your_api_key_here
-   FROM_EMAIL=noreply@ultra-predict.co.ke
+   FROM_EMAIL=noreply@hopementalhealthsupport.xyz
    ```
 
 ### Documentation

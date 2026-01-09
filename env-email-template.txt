@@ -1,27 +1,27 @@
 # ========================================
-# EMAIL CONFIGURATION FOR ultra-predict.co.ke
+# EMAIL CONFIGURATION FOR hopementalhealthsupport.xyz
 # ========================================
 # Copy and paste these into your .env file or Render environment variables
 # Replace the placeholder values with your actual credentials
 
 # Resend Email Service Configuration (Required for password reset & verification emails)
 RESEND_API_KEY=re_your_resend_api_key_here
-FROM_EMAIL=noreply@ultra-predict.co.ke
+FROM_EMAIL=noreply@hopementalhealthsupport.xyz
 
 # ========================================
 # SETUP INSTRUCTIONS
 # ========================================
 # 1. Sign up for Resend at https://resend.com/
 # 2. Get your API key from: https://resend.com/api-keys
-# 3. Add and verify your domain: ultra-predict.co.ke
+# 3. Add and verify your domain: hopementalhealthsupport.xyz
 #    - Go to: https://resend.com/domains
 #    - Click "Add Domain"
-#    - Enter: ultra-predict.co.ke
+#    - Enter: hopementalhealthsupport.xyz
 #    - Add the DNS records provided by Resend to your domain registrar
 #    - Wait for verification (usually takes a few minutes)
 # 4. Set environment variables in Render:
 #    - RESEND_API_KEY=re_xxxxxxxxxxxxx
-#    - FROM_EMAIL=noreply@ultra-predict.co.ke
+#    - FROM_EMAIL=noreply@hopementalhealthsupport.xyz
 # 5. Restart your backend server
 # 6. Check logs for: "✅ Resend email service initialized successfully"
 # 7. Test by requesting a password reset or email verification

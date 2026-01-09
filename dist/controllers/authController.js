@@ -140,7 +140,8 @@ const login = async (req, res) => {
         // Note: Email verification is encouraged but not required for login
         // Users can login even if not verified, but may have limited features
         // Generate JWT token with additional entropy to prevent duplicates
-        const token = jsonwebtoken_1.default.sign({ userId: user._id, timestamp: Date.now(), random: Math.random() }, process.env.JWT_SECRET || "your-secret-key", { expiresIn: "24h" });
+        // Use 1-year expiry to match session TTL for persistent login
+        const token = jsonwebtoken_1.default.sign({ userId: user._id, timestamp: Date.now(), random: Math.random() }, process.env.JWT_SECRET || "your-secret-key", { expiresIn: "365d" });
         // Create session - delete all previous sessions for this user (force logout on other devices)
         // FIXED: Using a very long TTL (1 year) to keep sessions effectively indefinite
         // Sessions will only expire on explicit logout or new device login
@@ -388,7 +389,8 @@ const verifyEmail = async (req, res) => {
         // Send welcome email
         await email_service_1.emailService.sendWelcomeEmail(user.email, user.name);
         // Generate JWT token
-        const token = jsonwebtoken_1.default.sign({ userId: user._id }, process.env.JWT_SECRET || "your-secret-key", { expiresIn: "24h" });
+        // Use 1-year expiry to match session TTL for persistent login
+        const token = jsonwebtoken_1.default.sign({ userId: user._id }, process.env.JWT_SECRET || "your-secret-key", { expiresIn: "365d" });
         // Create session - FIXED: Using a very long TTL (1 year) for persistent sessions
         const expiresAt = new Date();
         expiresAt.setFullYear(expiresAt.getFullYear() + 1); // Set expiry to 1 year from now

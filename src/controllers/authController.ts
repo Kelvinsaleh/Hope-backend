@@ -157,10 +157,12 @@ export const login = async (req: Request, res: Response) => {
     // Users can login even if not verified, but may have limited features
 
     // Generate JWT token with additional entropy to prevent duplicates
+    // Use 1-year expiry to match session TTL for persistent login
+    // Users stay logged in unless they explicitly logout or login on a new device
     const token = jwt.sign(
       { userId: user._id, timestamp: Date.now(), random: Math.random() },
       process.env.JWT_SECRET || "your-secret-key",
-      { expiresIn: "24h" }
+      { expiresIn: "365d" } // 1 year to match session TTL
     );
 
     // Create session - delete all previous sessions for this user (force logout on other devices)
@@ -433,11 +435,12 @@ export const verifyEmail = async (req: Request, res: Response) => {
     // Send welcome email
     await emailService.sendWelcomeEmail(user.email, user.name);
 
-    // Generate JWT token
+    // Generate JWT token with 1-year expiry for persistent login
+    // Users stay logged in unless they explicitly logout or login on a new device
     const token = jwt.sign(
       { userId: user._id },
       process.env.JWT_SECRET || "your-secret-key",
-      { expiresIn: "24h" }
+      { expiresIn: "365d" } // 1 year to match session TTL
     );
 
     // Create session - FIXED: Using a very long TTL (1 year) for persistent sessions

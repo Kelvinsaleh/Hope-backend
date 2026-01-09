@@ -19,7 +19,7 @@ class EmailService {
 
   private initialize() {
     const resendApiKey = process.env.RESEND_API_KEY;
-    const fromEmail = process.env.FROM_EMAIL || 'noreply@ultra-predict.co.ke';
+    const fromEmail = process.env.FROM_EMAIL || 'noreply@hopementalhealthsupport.xyz';
 
     if (!resendApiKey) {
       logger.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -32,10 +32,10 @@ class EmailService {
       logger.error('📖 Setup Guide:');
       logger.error('  1. Sign up at https://resend.com/');
       logger.error('  2. Get your API key from the dashboard');
-      logger.error('  3. Verify your domain: ultra-predict.co.ke');
+      logger.error('  3. Verify your domain: hopementalhealthsupport.xyz');
       logger.error('  4. Add to Render environment variables:');
       logger.error('     RESEND_API_KEY=re_your_api_key_here');
-      logger.error('     FROM_EMAIL=noreply@ultra-predict.co.ke');
+      logger.error('     FROM_EMAIL=noreply@hopementalhealthsupport.xyz');
       logger.error('');
       logger.error('🔗 Resend Dashboard: https://resend.com/api-keys');
       logger.error('🔗 Domain Settings: https://resend.com/domains');
@@ -257,7 +257,7 @@ class EmailService {
 
   async sendPasswordResetCode(email: string, code: string, name: string): Promise<boolean> {
     // Get frontend URL from environment or use default
-    const frontendUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://ultra-predict.co.ke';
+    const frontendUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://hopementalhealthsupport.xyz';
     const resetLink = `${frontendUrl}/reset-password?token=${code}`;
 
     const html = `

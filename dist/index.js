@@ -56,9 +56,7 @@ const allowedOrigins = (() => {
             'https://hopementalhealthsupport.xyz',
             'http://hopementalhealthsupport.xyz',
             'https://www.hopementalhealthsupport.xyz',
-            'http://www.hopementalhealthsupport.xyz',
-            'https://ultra-predict.co.ke',
-            'http://ultra-predict.co.ke'
+            'http://www.hopementalhealthsupport.xyz'
         ].filter((url) => Boolean(url));
     }
     return [
@@ -73,9 +71,7 @@ const allowedOrigins = (() => {
         'https://hopementalhealthsupport.xyz',
         'http://hopementalhealthsupport.xyz',
         'https://www.hopementalhealthsupport.xyz',
-        'http://www.hopementalhealthsupport.xyz',
-        'https://ultra-predict.co.ke',
-        'http://ultra-predict.co.ke'
+        'http://www.hopementalhealthsupport.xyz'
     ].filter((url) => Boolean(url));
 })();
 const corsOptions = {
