@@ -23,7 +23,6 @@ import {
   buildUserProfileSummary,
   trackEngagementSignal,
 } from "../services/personalization/personalizationBuilder";
-import { estimateTokens } from "../utils/conversationOptimizer";
 
 // Initialize Gemini API - Use environment variable or warn
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
@@ -727,15 +726,8 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
         const ids = recentJournalIds.map(id => Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : null).filter(Boolean);
         if (ids.length > 0) {
           const entries = await JournalEntry.find({ _id: { $in: ids }, userId: userIdObj }).lean();
-          // Replace memoryData.journalEntries/recentJournals with fetched entries (serialized)
+          // Replace memoryData.journalEntries with fetched entries
           memoryData.journalEntries = entries;
-          memoryData.recentJournals = entries.map(e => ({
-            id: e._id,
-            title: e.title,
-            excerpt: (e.content || '').substring(0, 200),
-            mood: e.mood,
-            createdAt: e.createdAt,
-          }));
         }
       } catch (e) {
         logger.warn('Failed to fetch incremental journal entries', e);
