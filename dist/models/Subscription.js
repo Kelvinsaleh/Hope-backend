@@ -48,8 +48,8 @@ const SubscriptionSchema = new mongoose_1.Schema({
         enum: ['monthly', 'annually']
     },
     planName: { type: String, required: true },
-    amount: { type: Number, required: true },
-    currency: { type: String, default: 'USD' },
+    amount: { type: Number, required: true }, // Amount in base currency (USD)
+    currency: { type: String, default: 'USD', enum: ['USD', 'KES'] },
     status: {
         type: String,
         required: true,
@@ -62,7 +62,9 @@ const SubscriptionSchema = new mongoose_1.Schema({
     activatedAt: { type: Date },
     paystackReference: { type: String, index: true },
     paystackAccessCode: { type: String },
-    paystackTransactionId: { type: String }
+    paystackTransactionId: { type: String },
+    paystackSubscriptionCode: { type: String, index: true },
+    paystackData: { type: mongoose_1.Schema.Types.Mixed }
 }, { timestamps: true });
 // Index for efficient querying
 SubscriptionSchema.index({ userId: 1, status: 1, expiresAt: 1 });

@@ -14,6 +14,8 @@ import memoryEnhancedChatRoutes from "./memoryEnhancedChat";
 import playlistRoutes from './playlist';
 import communityRoutes from './community';
 import adminRoutes from './admin';
+import notificationRoutes from './notifications';
+import personalizationRoutes from './personalization';
 
 const router = express.Router();
 
@@ -32,5 +34,7 @@ router.use("/memory-enhanced-chat", memoryEnhancedChatRoutes);
 router.use("/playlists", playlistRoutes);
 router.use("/community", communityRoutes);
 router.use("/admin", adminRoutes);
+router.use("/notifications", notificationRoutes);
+router.use("/personalization", personalizationRoutes);
 
 export default router;

@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getJournalAnalytics = exports.deleteJournalEntry = exports.updateJournalEntry = exports.getJournalEntry = exports.getJournalEntries = exports.createJournalEntry = void 0;
 const JournalEntry_1 = require("../models/JournalEntry");
@@ -14,8 +47,89 @@ const genAI = GEMINI_API_KEY ? new generative_ai_1.GoogleGenerativeAI(GEMINI_API
 // Create a new journal entry
 const createJournalEntry = async (req, res) => {
     try {
-        const { title, content, mood, tags, isPrivate, insights, emotionalState, keyThemes, concerns, achievements } = req.body;
+        const { title, content, mood, tags, isPrivate, insights, emotionalState, keyThemes, concerns, achievements, 
+        // CBT Template fields
+        cbtTemplate, situation, automaticThoughts, emotions, emotionIntensity, evidenceFor, evidenceAgainst, balancedThought, cognitiveDistortions, cbtInsights, } = req.body;
         const userId = new mongoose_1.Types.ObjectId(req.user.id);
+        // For CBT thought records, title and content are optional
+        // They should have situation, automaticThoughts, and other CBT fields
+        // CBT thought records are premium only
+        if (cbtTemplate === 'thought_record') {
+            // Check if user has premium access (including trial)
+            const { Subscription } = await Promise.resolve().then(() => __importStar(require("../models/Subscription")));
+            const { User } = await Promise.resolve().then(() => __importStar(require("../models/User")));
+            const userIdObj = new mongoose_1.Types.ObjectId(req.user.id);
+            const activeSub = await Subscription.findOne({
+                userId: userIdObj,
+                status: 'active',
+                expiresAt: { $gt: new Date() }
+            });
+            let hasPremium = !!activeSub;
+            if (!hasPremium) {
+                const user = await User.findById(userIdObj).lean();
+                if (user?.trialEndsAt && new Date() < new Date(user.trialEndsAt)) {
+                    hasPremium = true;
+                }
+            }
+            if (!hasPremium) {
+                return res.status(403).json({
+                    success: false,
+                    error: "CBT thought records are a premium feature. Upgrade to Premium to access this feature."
+                });
+            }
+            if (!mood) {
+                return res.status(400).json({
+                    error: "Mood is required for thought records"
+                });
+            }
+            // Use automaticThoughts as content if content is empty
+            const entryContent = content || automaticThoughts || situation || '';
+            const entryTitle = title || `Thought Record - ${new Date().toLocaleDateString()}`;
+            // Create journal entry with CBT fields
+            const journalEntry = new JournalEntry_1.JournalEntry({
+                userId,
+                title: entryTitle,
+                content: entryContent,
+                mood,
+                tags: tags || [],
+                isPrivate: isPrivate !== undefined ? isPrivate : true,
+                insights: cbtInsights || insights || [],
+                emotionalState: emotionalState || (emotions?.length ? emotions.join(', ') : undefined),
+                keyThemes: keyThemes || [],
+                concerns: concerns || [],
+                achievements: achievements || [],
+            });
+            // Store CBT-specific fields in a flexible way (as JSON in content or separate fields if schema supports)
+            // For now, we'll include CBT data in the entry
+            await journalEntry.save();
+            // Also save as CBT Thought Record if CBT models are available
+            try {
+                const { CBTThoughtRecord } = await Promise.resolve().then(() => __importStar(require("../models/CBTThoughtRecord")));
+                const thoughtRecord = new CBTThoughtRecord({
+                    userId,
+                    situation: situation || '',
+                    automaticThoughts: automaticThoughts || '',
+                    emotions: emotions || [],
+                    emotionIntensity: emotionIntensity || 0,
+                    evidenceFor: evidenceFor || '',
+                    evidenceAgainst: evidenceAgainst || '',
+                    balancedThought: balancedThought || '',
+                    cognitiveDistortions: cognitiveDistortions || [],
+                    mood,
+                });
+                await thoughtRecord.save();
+            }
+            catch (cbtError) {
+                logger_1.logger.warn('Failed to save CBT thought record separately:', cbtError);
+                // Continue even if CBT model save fails
+            }
+            return res.status(201).json({
+                success: true,
+                message: "Thought record created successfully",
+                entry: journalEntry,
+            });
+        }
+        // For regular journal entries, title and content are required
         if (!title || !content || !mood) {
             return res.status(400).json({
                 error: "Title, content, and mood are required"

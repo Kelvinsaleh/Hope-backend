@@ -1,4 +1,5 @@
 import express from 'express';
+import multer from 'multer';
 import { authenticateToken } from '../middleware/auth';
 import {
   getCommunitySpaces,
@@ -16,10 +17,33 @@ import {
   deleteComment,
   saveImageMetadata,
   sharePost,
-  getFeed
+  getFeed,
+  uploadImage,
+  uploadVideo,
 } from '../controllers/communityController';
 
 const router = express.Router();
+
+// Configure multer for file uploads
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { 
+    fileSize: 100 * 1024 * 1024, // 100MB limit for images/videos
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept images
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    }
+    // Accept videos
+    else if (file.mimetype.startsWith('video/')) {
+      cb(null, true);
+    }
+    else {
+      cb(new Error('Invalid file type. Only images and videos are allowed.'));
+    }
+  },
+});
 
 // Public routes (no auth required)
 router.get('/spaces', getCommunitySpaces);
@@ -44,7 +68,11 @@ router.delete('/posts/:postId', deletePost);
 router.post('/comments', createComment);
 router.delete('/comments/:commentId', deleteComment);
 
-// Images
+// Media Upload (already protected by authenticateToken middleware above)
+router.post('/upload/image', upload.single('file'), uploadImage);
+router.post('/upload/video', upload.single('file'), uploadVideo);
+
+// Images (legacy endpoint)
 router.post('/images', saveImageMetadata);
 
 // Challenges

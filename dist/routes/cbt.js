@@ -6,11 +6,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const cbtController_1 = require("../controllers/cbtController");
 const auth_1 = require("../middleware/auth");
+const premiumAccess_1 = require("../middleware/premiumAccess");
 const router = express_1.default.Router();
 // All routes require authentication
 router.use(auth_1.authenticateToken);
-// Thought Records
-router.post("/thought-records", cbtController_1.saveThoughtRecord);
+// Thought Records (Premium only)
+router.post("/thought-records", (0, premiumAccess_1.requirePremium)("CBT thought records"), cbtController_1.saveThoughtRecord);
 router.get("/thought-records", cbtController_1.getThoughtRecords);
 // CBT Activities
 router.post("/activities", cbtController_1.saveCBTActivity);
@@ -18,7 +19,8 @@ router.get("/activities", cbtController_1.getCBTActivities);
 // Progress and Analytics
 router.get("/progress", cbtController_1.getCBTProgress);
 router.get("/insights", cbtController_1.getCBTInsights);
-router.post("/insights/generate", cbtController_1.generateAICBTInsights); // AI-powered insights
+router.post("/insights", (0, premiumAccess_1.requirePremium)("AI insights"), cbtController_1.generateAICBTInsights); // AI-powered insights (accepts both POST /cbt/insights and POST /cbt/insights/generate)
+router.post("/insights/generate", (0, premiumAccess_1.requirePremium)("AI insights"), cbtController_1.generateAICBTInsights); // AI-powered insights (legacy route)
 router.get("/analytics", cbtController_1.getCBTAnalytics);
 // Mood Entries with CBT
 router.post("/mood-entries", cbtController_1.saveMoodEntryWithCBT);

@@ -5,15 +5,26 @@ const mongoose_1 = require("mongoose");
 const communityModeration_1 = require("../middleware/communityModeration");
 const logger_1 = require("../utils/logger");
 const Community_1 = require("../models/Community");
+const User_1 = require("../models/User");
 const Subscription_1 = require("../models/Subscription");
-// Check if user has premium access
+// Check if user has premium access (including active trial)
 async function isPremiumUser(userId) {
     const subscription = await Subscription_1.Subscription.findOne({
         userId,
         status: 'active',
         expiresAt: { $gt: new Date() }
     });
-    return !!subscription;
+    if (subscription)
+        return true;
+    // Check for active trial
+    const user = await User_1.User.findById(userId).lean();
+    if (user?.trialEndsAt) {
+        const now = new Date();
+        if (now < new Date(user.trialEndsAt)) {
+            return true; // User has active trial
+        }
+    }
+    return false;
 }
 // Get all community spaces with member counts and activity
 const getCommunitySpaces = async (req, res) => {

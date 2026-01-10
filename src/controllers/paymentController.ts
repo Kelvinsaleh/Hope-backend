@@ -17,24 +17,32 @@ interface PaymentPlan {
   paystackPlanCode: string;
 }
 
+// Exchange rate: 1 USD = 130 KES (approximate)
+const USD_TO_KES_RATE = 130;
+
 const PLANS: PaymentPlan[] = [
   {
     id: 'monthly',
     name: 'Monthly Plan',
-    price: 500,
-    currency: 'KES',
+    price: 3.99, // $3.99 USD
+    currency: 'USD',
     interval: 'monthly',
     paystackPlanCode: process.env.PAYSTACK_MONTHLY_PLAN_CODE || 'PLN_monthly_premium'
   },
   {
     id: 'annually',
     name: 'Annual Plan',
-    price: 6000,
-    currency: 'KES',
+    price: 39.90, // $39.90 USD (10 months = 2 months free: $3.99 * 10)
+    currency: 'USD',
     interval: 'annually',
     paystackPlanCode: process.env.PAYSTACK_ANNUAL_PLAN_CODE || 'PLN_annual_premium'
   }
 ];
+
+// Convert USD to KES for Paystack
+function convertUsdToKes(usdAmount: number): number {
+  return Math.round(usdAmount * USD_TO_KES_RATE);
+}
 
 // Initialize payment with Paystack
 export const initializePayment = async (req: Request, res: Response) => {
@@ -67,7 +75,11 @@ export const initializePayment = async (req: Request, res: Response) => {
       });
     }
 
-    // Create Paystack transaction
+    // Convert USD to KES for Paystack (Paystack only accepts KES)
+    const amountInKes = convertUsdToKes(plan.price);
+    const amountInKobo = amountInKes * 100; // Convert KES to kobo (smallest unit)
+    
+    // Create Paystack transaction with KES
     const paystackResponse = await fetch('https://api.paystack.co/transaction/initialize', {
       method: 'POST',
       headers: {
@@ -76,13 +88,16 @@ export const initializePayment = async (req: Request, res: Response) => {
       },
       body: JSON.stringify({
         email,
-        amount: Math.round(plan.price * 100), // Convert to kobo/cent
-        currency: plan.currency,
+        amount: amountInKobo, // Amount in kobo (KES * 100)
+        currency: 'KES', // Paystack only accepts KES
         reference: `HOPE_${Date.now()}_${userId}`,
         metadata: {
           userId,
           planId,
           planName: plan.name,
+          usdAmount: plan.price, // Store USD amount in metadata
+          kesAmount: amountInKes, // Store KES amount in metadata
+          exchangeRate: USD_TO_KES_RATE,
           ...metadata
         },
         callback_url: metadata?.callback_url || `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success`
@@ -95,17 +110,21 @@ export const initializePayment = async (req: Request, res: Response) => {
       throw new Error(paystackData.message || 'Failed to initialize payment');
     }
 
-    // Store pending subscription
+    // Store pending subscription (store USD amount, but Paystack will charge in KES)
     const pendingSubscription = new Subscription({
       userId: new Types.ObjectId(userId),
       planId,
       planName: plan.name,
-      amount: plan.price,
-      currency: plan.currency,
+      amount: plan.price, // Store USD amount
+      currency: 'USD', // Store as USD for display
       status: 'pending',
       paystackReference: paystackData.data.reference,
       paystackAccessCode: paystackData.data.access_code
     });
+    
+    // Also store KES amount in metadata for reference
+    (pendingSubscription as any).kesAmount = amountInKes;
+    (pendingSubscription as any).usdAmount = plan.price;
 
     await pendingSubscription.save();
 
@@ -113,7 +132,12 @@ export const initializePayment = async (req: Request, res: Response) => {
       success: true,
       authorization_url: paystackData.data.authorization_url,
       access_code: paystackData.data.access_code,
-      reference: paystackData.data.reference
+      reference: paystackData.data.reference,
+      // Return both USD and KES amounts for display
+      usdAmount: plan.price,
+      kesAmount: amountInKes,
+      exchangeRate: USD_TO_KES_RATE,
+      currency: 'KES' // Actual currency charged by Paystack
     });
 
   } catch (error) {

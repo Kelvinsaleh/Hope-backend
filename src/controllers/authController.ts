@@ -430,6 +430,64 @@ export const verifyEmail = async (req: Request, res: Response) => {
     user.isEmailVerified = true;
     user.verificationCode = undefined;
     user.verificationCodeExpiry = undefined;
+    
+    // Activate 7-day premium trial for new users (only on first email verification)
+    // Check if user is eligible for trial (new user, no previous trial, no premium subscription)
+    if (!user.trialEndsAt && !user.subscription?.isActive) {
+      // Check account age - only grant trial if account was created within last 7 days (to prevent abuse)
+      const accountAge = Date.now() - new Date(user.createdAt).getTime();
+      const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+      
+      if (accountAge <= sevenDaysInMs) {
+        // Abuse prevention checks
+        let canActivateTrial = true;
+        
+        // 1. Check IP address - limit trials per IP (max 3 trials per IP in last 30 days)
+        const clientIp = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+        if (clientIp) {
+          const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+          const trialsFromSameIp = await User.countDocuments({
+            trialEndsAt: { $exists: true, $gte: thirtyDaysAgo },
+            // Store IP in a separate field or use a hash of IP + user agent
+            // For simplicity, we'll check email domain and account creation patterns
+          });
+          
+          // Check for suspicious patterns: multiple accounts from same email domain
+          const emailDomain = user.email.split('@')[1];
+          const accountsFromSameDomain = await User.countDocuments({
+            email: new RegExp(`@${emailDomain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+            createdAt: { $gte: thirtyDaysAgo }
+          });
+          
+          // Block common disposable email domains
+          const disposableEmailDomains = [
+            'tempmail.com', '10minutemail.com', 'guerrillamail.com', 'mailinator.com',
+            'throwaway.email', 'temp-mail.org', 'fakeinbox.com', 'mohmal.com'
+          ];
+          
+          if (disposableEmailDomains.some(domain => emailDomain.toLowerCase().includes(domain))) {
+            canActivateTrial = false;
+            logger.warn(`Trial activation blocked: disposable email domain detected for ${user.email}`);
+          } else if (accountsFromSameDomain > 3) {
+            // More than 3 accounts from same domain in last 30 days - suspicious
+            canActivateTrial = false;
+            logger.warn(`Trial activation blocked: too many accounts from same domain (${emailDomain})`);
+          }
+        }
+        
+        if (canActivateTrial) {
+          // Grant 7-day trial
+          const trialEndDate = new Date();
+          trialEndDate.setDate(trialEndDate.getDate() + 7);
+          user.trialEndsAt = trialEndDate;
+          
+          logger.info(`7-day premium trial activated for new user: ${user.email} (trial ends: ${trialEndDate.toISOString()}, IP: ${clientIp})`);
+        } else {
+          logger.info(`Trial activation skipped for user: ${user.email} due to abuse prevention checks`);
+        }
+      }
+    }
+    
     await user.save();
 
     // Send welcome email
@@ -466,10 +524,13 @@ export const verifyEmail = async (req: Request, res: Response) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        tier: user.trialEndsAt && new Date() < new Date(user.trialEndsAt) ? 'premium' : (user.subscription?.tier || 'free'),
+        trialEndsAt: user.trialEndsAt?.toISOString(),
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
       },
       token,
+      trialActivated: !!user.trialEndsAt && new Date() < new Date(user.trialEndsAt),
     });
   } catch (error) {
     console.error("Email verification error:", error);

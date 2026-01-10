@@ -64,6 +64,11 @@ const UserProfileSchema = new mongoose_1.Schema({
         requireVerification: { type: Boolean, default: true },
         maxDistance: { type: Number, default: 0 }
     },
+    privacyPreferences: {
+        analyticsEnabled: { type: Boolean, default: true },
+        crashReportingEnabled: { type: Boolean, default: true },
+        dataCollectionEnabled: { type: Boolean, default: true }
+    },
     isVerified: { type: Boolean, default: false },
     verificationDate: { type: Date },
     lastActive: { type: Date, default: Date.now },

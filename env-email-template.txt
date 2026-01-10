@@ -6,7 +6,7 @@
 
 # Resend Email Service Configuration (Required for password reset & verification emails)
 RESEND_API_KEY=re_your_resend_api_key_here
-FROM_EMAIL=noreply@hopementalhealthsupport.xyz
+FROM_EMAIL=support@hopementalhealthsupport.xyz
 
 # ========================================
 # SETUP INSTRUCTIONS
@@ -21,7 +21,7 @@ FROM_EMAIL=noreply@hopementalhealthsupport.xyz
 #    - Wait for verification (usually takes a few minutes)
 # 4. Set environment variables in Render:
 #    - RESEND_API_KEY=re_xxxxxxxxxxxxx
-#    - FROM_EMAIL=noreply@hopementalhealthsupport.xyz
+#    - FROM_EMAIL=support@hopementalhealthsupport.xyz
 # 5. Restart your backend server
 # 6. Check logs for: "✅ Resend email service initialized successfully"
 # 7. Test by requesting a password reset or email verification

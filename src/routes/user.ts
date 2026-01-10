@@ -3,12 +3,24 @@ import { authenticateToken } from "../middleware/auth";
 import { Subscription } from "../models/Subscription";
 import { Types } from "mongoose";
 import { UserProfile } from "../models/UserProfile";
+import { User } from "../models/User";
+import { JournalEntry } from "../models/JournalEntry";
+import { Mood } from "../models/Mood";
+import { ChatSession } from "../models/ChatSession";
+import { MeditationSession } from "../models/Meditation";
+import { CBTThoughtRecord } from "../models/CBTThoughtRecord";
+import { CBTActivity } from "../models/CBTActivity";
+import { CommunityPost } from "../models/Community";
+import { FavoriteMeditation } from "../models/FavoriteMeditation";
+import { WeeklyReport } from "../models/WeeklyReport";
+import { Session } from "../models/Session";
+import { LongTermMemoryModel } from "../models/LongTermMemory";
+
 // Validation defaults - can be overridden via env
 const MAX_GOALS = Number(process.env.MAX_GOALS) || 10;
 const MAX_CHALLENGES = Number(process.env.MAX_CHALLENGES) || 10;
 const MAX_PROFILE_STR_LEN = Number(process.env.MAX_PROFILE_STR_LEN) || 200;
 const MAX_BIO_LEN = Number(process.env.MAX_BIO_LEN) || 500;
-import { User } from "../models/User";
 
 const router = express.Router();
 
@@ -97,7 +109,7 @@ router.post("/profile", async (req, res) => {
     const allowedFields = [
       'bio', 'age', 'challenges', 'goals', 'communicationStyle',
       'experienceLevel', 'interests', 'availability', 'matchingPreferences',
-      'safetySettings', 'isVerified', 'verificationDate', 'lastActive', 'status'
+      'safetySettings', 'privacyPreferences', 'isVerified', 'verificationDate', 'lastActive', 'status'
     ];
     const sanitized: any = {};
     for (const k of allowedFields) {
@@ -149,7 +161,7 @@ router.put("/profile", async (req, res) => {
     const allowedFields = [
       'bio', 'age', 'challenges', 'goals', 'communicationStyle',
       'experienceLevel', 'interests', 'availability', 'matchingPreferences',
-      'safetySettings', 'isVerified', 'verificationDate', 'lastActive', 'status'
+      'safetySettings', 'privacyPreferences', 'isVerified', 'verificationDate', 'lastActive', 'status'
     ];
     const sanitized: any = {};
     for (const k of allowedFields) {
@@ -189,6 +201,214 @@ router.put("/", async (req, res) => {
   res.json({ success: true, data: user });
   } catch (error) {
     res.status(500).json({ success: false, error: "Failed to update user" });
+  }
+});
+
+// Export all user data (GDPR right to data portability)
+router.get("/data/export", async (req, res) => {
+  try {
+    const userId = new Types.ObjectId(req.user._id);
+    
+    // Fetch all user data from backend
+    const [user, profile, journalEntries, moods, chatSessions, meditationSessions, thoughtRecords, cbtActivities, communityPosts, favoriteMeditations, weeklyReports] = await Promise.all([
+      User.findById(userId).select('-password').lean(),
+      UserProfile.findOne({ userId }).lean(),
+      JournalEntry.find({ userId }).lean(),
+      Mood.find({ userId }).lean(),
+      ChatSession.find({ userId }).lean(),
+      MeditationSession.find({ userId }).lean(),
+      CBTThoughtRecord.find({ userId }).lean(),
+      CBTActivity.find({ userId }).lean(),
+      CommunityPost.find({ userId }).lean(),
+      FavoriteMeditation.find({ userId }).lean(),
+      WeeklyReport.find({ userId }).lean(),
+    ]);
+    
+    // Compile export data
+    const exportData = {
+      exportDate: new Date().toISOString(),
+      user: {
+        id: user?._id,
+        name: user?.name,
+        email: user?.email,
+        createdAt: user?.createdAt,
+        lastActive: user?.lastActive,
+        subscription: user?.subscription,
+      },
+      profile: profile || {},
+      journalEntries: journalEntries || [],
+      moods: moods || [],
+      chatSessions: (chatSessions || []).map((session: any) => ({
+        sessionId: session.sessionId,
+        title: session.title,
+        messageCount: session.messages?.length || 0,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+        // Optionally include messages (remove for privacy/brevity if needed)
+        messages: session.messages || [],
+      })),
+      meditationSessions: meditationSessions || [],
+      thoughtRecords: thoughtRecords || [],
+      cbtActivities: cbtActivities || [],
+      communityPosts: (communityPosts || []).map((post: any) => ({
+        id: post._id,
+        content: post.content,
+        mood: post.mood,
+        createdAt: post.createdAt,
+        isAnonymous: post.isAnonymous,
+      })),
+      favoriteMeditations: favoriteMeditations || [],
+      weeklyReports: weeklyReports || [],
+      metadata: {
+        totalJournalEntries: journalEntries?.length || 0,
+        totalMoods: moods?.length || 0,
+        totalChatSessions: chatSessions?.length || 0,
+        totalMeditationSessions: meditationSessions?.length || 0,
+        totalThoughtRecords: thoughtRecords?.length || 0,
+        totalCBTActivities: cbtActivities?.length || 0,
+        totalCommunityPosts: communityPosts?.length || 0,
+        totalFavoriteMeditations: favoriteMeditations?.length || 0,
+        totalWeeklyReports: weeklyReports?.length || 0,
+      },
+    };
+    
+    res.json({
+      success: true,
+      data: exportData,
+    });
+  } catch (error) {
+    console.error("Error exporting user data:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to export user data",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+// Update privacy preferences
+router.put("/privacy-preferences", async (req, res) => {
+  try {
+    const userId = new Types.ObjectId(req.user._id);
+    const { analyticsEnabled, crashReportingEnabled, dataCollectionEnabled } = req.body || {};
+    
+    const privacyPreferences: any = {};
+    if (typeof analyticsEnabled === 'boolean') {
+      privacyPreferences.analyticsEnabled = analyticsEnabled;
+    }
+    if (typeof crashReportingEnabled === 'boolean') {
+      privacyPreferences.crashReportingEnabled = crashReportingEnabled;
+    }
+    if (typeof dataCollectionEnabled === 'boolean') {
+      privacyPreferences.dataCollectionEnabled = dataCollectionEnabled;
+    }
+    
+    if (Object.keys(privacyPreferences).length === 0) {
+      return res.status(400).json({ success: false, error: "No privacy preferences provided" });
+    }
+    
+    // Get existing profile or create one
+    const existing = await UserProfile.findOne({ userId });
+    if (existing) {
+      // Update existing privacy preferences
+      const currentPreferences = existing.privacyPreferences || {};
+      await UserProfile.updateOne(
+        { userId },
+        { $set: { privacyPreferences: { ...currentPreferences, ...privacyPreferences } } }
+      );
+    } else {
+      // Create profile with privacy preferences
+      await UserProfile.create({
+        userId,
+        privacyPreferences: {
+          analyticsEnabled: analyticsEnabled ?? true,
+          crashReportingEnabled: crashReportingEnabled ?? true,
+          dataCollectionEnabled: dataCollectionEnabled ?? true,
+        },
+      });
+    }
+    
+    const updated = await UserProfile.findOne({ userId }).lean();
+    
+    res.json({
+      success: true,
+      data: {
+        privacyPreferences: (updated as any)?.privacyPreferences || {
+          analyticsEnabled: analyticsEnabled ?? true,
+          crashReportingEnabled: crashReportingEnabled ?? true,
+          dataCollectionEnabled: dataCollectionEnabled ?? true,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error updating privacy preferences:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to update privacy preferences",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+// Delete all user data (GDPR right to be forgotten)
+router.delete("/data", async (req, res) => {
+  try {
+    const userId = new Types.ObjectId(req.user._id);
+    
+    // Delete all user data from all collections
+    const deleteResults = await Promise.all([
+      JournalEntry.deleteMany({ userId }),
+      Mood.deleteMany({ userId }),
+      ChatSession.deleteMany({ userId }),
+      MeditationSession.deleteMany({ userId }),
+      CBTThoughtRecord.deleteMany({ userId }),
+      CBTActivity.deleteMany({ userId }),
+      CommunityPost.deleteMany({ userId }),
+      FavoriteMeditation.deleteMany({ userId }),
+      WeeklyReport.deleteMany({ userId }),
+      UserProfile.deleteOne({ userId }),
+      Session.deleteMany({ userId }),
+      LongTermMemoryModel.deleteMany({ userId }),
+    ]);
+    
+    // Invalidate memory cache
+    try {
+      const { invalidateMemoryCacheForUser } = require('../controllers/memoryEnhancedChat');
+      invalidateMemoryCacheForUser(String(userId));
+    } catch (e) {
+      console.warn('Failed to call invalidateMemoryCacheForUser', e);
+    }
+    
+    // Note: We do NOT delete the User account itself, only their data
+    // This allows them to login again if needed, but with a fresh account
+    
+    console.log(`User data deleted for user ${userId}`);
+    
+    res.json({
+      success: true,
+      message: "All user data deleted successfully",
+      deleted: {
+        journalEntries: deleteResults[0].deletedCount,
+        moods: deleteResults[1].deletedCount,
+        chatSessions: deleteResults[2].deletedCount,
+        meditationSessions: deleteResults[3].deletedCount,
+        thoughtRecords: deleteResults[4].deletedCount,
+        cbtActivities: deleteResults[5].deletedCount,
+        communityPosts: deleteResults[6].deletedCount,
+        favoriteMeditations: deleteResults[7].deletedCount,
+        weeklyReports: deleteResults[8].deletedCount,
+        profile: deleteResults[9].deletedCount,
+        sessions: deleteResults[10].deletedCount,
+        memories: deleteResults[11].deletedCount,
+      },
+    });
+  } catch (error) {
+    console.error("Error deleting user data:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to delete user data",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
   }
 });
 

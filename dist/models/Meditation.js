@@ -48,7 +48,10 @@ const MeditationSessionSchema = new mongoose_1.Schema({
     userId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true },
     meditationId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Meditation", required: true },
     completedAt: { type: Date, default: Date.now },
-    duration: { type: Number, required: true },
+    duration: { type: Number, required: true }, // meditation duration in minutes
+    listenedDuration: { type: Number, default: 0 }, // actual time listened in seconds
+    listenPercentage: { type: Number, min: 0, max: 100 }, // percentage of meditation listened
+    counted: { type: Boolean, default: false, index: true }, // true if >50% listened (counts towards free tier limit)
     rating: { type: Number, min: 1, max: 5 },
     notes: { type: String },
 }, { timestamps: true });

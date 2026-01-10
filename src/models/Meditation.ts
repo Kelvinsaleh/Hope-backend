@@ -17,6 +17,9 @@ export interface IMeditationSession extends Document {
   meditationId: mongoose.Types.ObjectId;
   completedAt: Date;
   duration: number; // actual duration in minutes
+  listenedDuration: number; // actual time listened in seconds
+  listenPercentage?: number; // percentage of meditation listened (0-100)
+  counted: boolean; // true if >50% listened (counts towards free tier limit)
   rating?: number; // 1-5 stars
   notes?: string;
 }
@@ -39,7 +42,10 @@ const MeditationSessionSchema = new Schema<IMeditationSession>(
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     meditationId: { type: Schema.Types.ObjectId, ref: "Meditation", required: true },
     completedAt: { type: Date, default: Date.now },
-    duration: { type: Number, required: true },
+    duration: { type: Number, required: true }, // meditation duration in minutes
+    listenedDuration: { type: Number, default: 0 }, // actual time listened in seconds
+    listenPercentage: { type: Number, min: 0, max: 100 }, // percentage of meditation listened
+    counted: { type: Boolean, default: false, index: true }, // true if >50% listened (counts towards free tier limit)
     rating: { type: Number, min: 1, max: 5 },
     notes: { type: String },
   },

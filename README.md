@@ -188,7 +188,7 @@ The backend uses **Resend** for sending password reset and email verification em
 4. **Set Environment Variables**:
    ```bash
    RESEND_API_KEY=re_your_api_key_here
-   FROM_EMAIL=noreply@hopementalhealthsupport.xyz
+   FROM_EMAIL=support@hopementalhealthsupport.xyz
    ```
 
 ### Documentation

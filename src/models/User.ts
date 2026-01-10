@@ -19,6 +19,7 @@ export interface IUser extends Document {
     activatedAt?: Date;
     expiresAt?: Date;
   };
+  trialEndsAt?: Date; // When the 7-day premium trial ends (null if not on trial or trial expired)
   blockedUsers?: Types.ObjectId[];
   suspendedAt?: Date;
   suspensionReason?: string;
@@ -51,6 +52,7 @@ const UserSchema = new Schema<IUser>(
       activatedAt: { type: Date },
       expiresAt: { type: Date }
     },
+    trialEndsAt: { type: Date, index: true }, // When the 7-day premium trial ends
     blockedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     suspendedAt: { type: Date },
     suspensionReason: { type: String },

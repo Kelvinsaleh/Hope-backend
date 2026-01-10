@@ -26,6 +26,11 @@ export interface IUserProfile extends Document {
     requireVerification?: boolean;
     maxDistance?: number;
   };
+  privacyPreferences?: {
+    analyticsEnabled?: boolean;
+    crashReportingEnabled?: boolean;
+    dataCollectionEnabled?: boolean;
+  };
   isVerified?: boolean;
   verificationDate?: Date;
   lastActive?: Date;
@@ -62,6 +67,11 @@ const UserProfileSchema = new Schema<IUserProfile>({
     allowEmergencySupport: { type: Boolean, default: false },
     requireVerification: { type: Boolean, default: true },
     maxDistance: { type: Number, default: 0 }
+  },
+  privacyPreferences: {
+    analyticsEnabled: { type: Boolean, default: true },
+    crashReportingEnabled: { type: Boolean, default: true },
+    dataCollectionEnabled: { type: Boolean, default: true }
   },
   isVerified: { type: Boolean, default: false },
   verificationDate: { type: Date },

@@ -242,17 +242,34 @@ export const getCBTProgress = async (req: Request, res: Response) => {
 // Generate AI-powered CBT insights
 export const generateAICBTInsights = async (req: Request, res: Response) => {
   try {
-    const { text, type, mood, emotions, situation } = req.body;
+    // Accept both 'text' and 'content' for compatibility
+    const { text, content, type, mood, emotions, situation } = req.body;
+    const thoughtText = text || content;
 
-    if (!text || !type) {
+    if (!thoughtText || !type) {
       return res.status(400).json({
         success: false,
-        message: "Text and type are required",
+        message: "Content (or text) and type are required",
       });
     }
 
     if (!genAI) {
       // Return a helpful fallback response when AI is not configured
+      // Format response based on type
+      if (type === 'thought_analysis' || type === 'thought_record') {
+        return res.status(200).json({
+          success: true,
+          insights: ["AI service not configured. Basic analysis suggests reviewing your thought patterns."],
+          cognitiveDistortions: [],
+          data: {
+            error: "AI service not configured",
+            message: "AI insights require GEMINI_API_KEY to be set. Using basic analysis.",
+            cognitiveDistortions: [],
+            recommendations: ["Set GEMINI_API_KEY environment variable for AI-powered insights"]
+          },
+          isFailover: true
+        });
+      }
       return res.status(200).json({
         success: true,
         data: {
@@ -275,7 +292,7 @@ export const generateAICBTInsights = async (req: Request, res: Response) => {
 
 Analyze this journal entry and provide 3-5 brief, supportive insights as a mental health companion.
 
-Journal: "${text}"
+Journal: "${thoughtText}"
 Mood: ${mood || 'Not specified'}/6
 
 Respond with a JSON array of 3-5 short insights (1-2 sentences each). Focus on:
@@ -292,7 +309,9 @@ Only return the JSON array, nothing else.`;
 
 You are a CBT (Cognitive Behavioral Therapy) expert. Analyze the following thought and provide insights:
 
-Thought: "${text}"
+Thought: "${thoughtText}"
+Situation: "${situation || 'Not specified'}"
+Emotions: ${emotions?.join(', ') || 'Not specified'}
 
 Please provide a JSON response with:
 1. cognitiveDistortions: Array of identified cognitive distortions (e.g., "All-or-nothing thinking", "Catastrophizing", "Overgeneralization", "Mental filtering", "Jumping to conclusions", "Emotional reasoning", "Should statements", "Labeling", "Personalization")
@@ -308,7 +327,7 @@ Analyze this mood and situation with empathy:
 
 Mood Level: ${mood}/10
 Emotions: ${emotions?.join(', ') || 'Not specified'}
-Situation: "${situation || text}"
+Situation: "${situation || thoughtText}"
 
 Provide a JSON response with:
 1. copingStrategies: Array of 4-6 brief, actionable coping strategies
@@ -322,7 +341,7 @@ Format as valid JSON only. Keep supportiveMessage natural and real.`;
 
 You are a CBT therapist. Provide general CBT insights for:
 
-Text: "${text}"
+Text: "${thoughtText}"
 Mood: ${mood || 'Not specified'}/10
 
 Please provide a JSON response with:
@@ -332,9 +351,10 @@ Please provide a JSON response with:
 4. recommendations: Array of 3-5 recommendations
 
 Format your response as valid JSON only.`;
+    } else {
+      // Fallback prompt for unknown types
+      prompt = buildHopePrompt(mood || 'neutral', `Type: ${type || 'N/A'}\nText/Situation: ${thoughtText}\nEmotions: ${emotions?.join(', ') || 'N/A'}` , 'CBT Insights flow. Respond concisely in 2-4 lines unless the user asks for step-by-step or the situation clearly requires more detail.');
     }
-
-    prompt = buildHopePrompt(mood || 'neutral', `Type: ${type || 'N/A'}\nText/Situation: ${text}\nEmotions: ${emotions?.join(', ') || 'N/A'}` , 'CBT Insights flow. Respond concisely in 2-4 lines unless the user asks for step-by-step or the situation clearly requires more detail.');
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
@@ -355,17 +375,47 @@ Format your response as valid JSON only.`;
           source: 'backend'
         });
       }
+      
+      // For thought_analysis, format response to match Flutter expectations
+      if (type === 'thought_analysis' || type === 'thought_record') {
+        // Extract insights array from various possible response formats
+        let insightsArray: string[] = [];
+        if (insights.insights && Array.isArray(insights.insights)) {
+          insightsArray = insights.insights;
+        } else if (insights.balancedSuggestions && Array.isArray(insights.balancedSuggestions)) {
+          insightsArray = insights.balancedSuggestions;
+        } else if (insights.recommendations && Array.isArray(insights.recommendations)) {
+          insightsArray = insights.recommendations;
+        }
+        
+        // Return format that Flutter service expects: a Map with 'insights' (array) and 'cognitiveDistortions' (array)
+        return res.json({
+          success: true,
+          insights: {
+            insights: insightsArray.length > 0 ? insightsArray : ['Analysis completed. Consider the cognitive patterns identified.'],
+            cognitiveDistortions: insights.cognitiveDistortions || [],
+          },
+          data: insights,
+        });
+      }
     } catch (parseError) {
       // If JSON parsing fails, create a fallback response
       console.error("Failed to parse AI response:", parseError);
       insights = {
         error: "Failed to parse AI response",
         rawResponse: aiText,
+        insights: ['Unable to generate AI insights at this time.'],
+        cognitiveDistortions: [],
       };
     }
 
+    // Default response format
     res.json({
       success: true,
+      insights: {
+        insights: insights.insights || [],
+        cognitiveDistortions: insights.cognitiveDistortions || [],
+      },
       data: insights,
     });
   } catch (error) {

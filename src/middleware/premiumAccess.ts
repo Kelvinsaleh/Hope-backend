@@ -10,18 +10,30 @@ export const requirePremium = (feature: string) => {
 
       // Lazy import to avoid circular dependencies
       const { Subscription } = require('../models/Subscription');
+      const { User } = require('../models/User');
       const { Types } = require('mongoose');
 
       const userId = new Types.ObjectId(req.user._id);
+      
+      // Check for active subscription
       const activeSub = await Subscription.findOne({ userId, status: 'active', expiresAt: { $gt: new Date() } });
-
-      if (!activeSub) {
-        return res.status(403).json({ success: false, error: `Premium subscription required for ${feature}` });
+      if (activeSub) {
+        req.subscription = activeSub;
+        return next();
       }
 
-      // Attach subscription to request for downstream handlers
-      req.subscription = activeSub;
-      next();
+      // Check for active trial
+      const user = await User.findById(userId).lean();
+      if (user?.trialEndsAt) {
+        const now = new Date();
+        if (now < new Date(user.trialEndsAt)) {
+          // User has active trial, allow access
+          return next();
+        }
+      }
+
+      // No active subscription or trial
+      return res.status(403).json({ success: false, error: `Premium subscription or active trial required for ${feature}` });
     } catch (error) {
       res.status(500).json({
         error: "Failed to check premium access",

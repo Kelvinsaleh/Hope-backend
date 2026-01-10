@@ -277,11 +277,15 @@ const startMeditationSession = async (req, res) => {
                 error: "Meditation not found"
             });
         }
+        // Start session - don't mark as completed yet, it will be completed when user finishes
         const session = new Meditation_1.MeditationSession({
             userId,
             meditationId: new mongoose_1.Types.ObjectId(meditationId),
-            completedAt: new Date(),
             duration: meditation.duration,
+            listenedDuration: 0,
+            listenPercentage: 0,
+            counted: false, // Will be set to true when completed if >50% listened
+            // Don't set completedAt yet - it will be set when user completes the meditation
         });
         await session.save();
         res.status(201).json({
@@ -303,23 +307,42 @@ exports.startMeditationSession = startMeditationSession;
 const completeMeditationSession = async (req, res) => {
     try {
         const { sessionId } = req.params;
-        const { actualDuration, rating, notes } = req.body;
+        const { listenedDuration, rating, notes } = req.body; // listenedDuration in seconds
         const userId = new mongoose_1.Types.ObjectId(req.user._id);
-        const session = await Meditation_1.MeditationSession.findOneAndUpdate({ _id: sessionId, userId }, {
-            actualDuration: actualDuration || 0,
-            rating,
-            notes,
-            completedAt: new Date(),
-        }, { new: true });
+        // Find the session and meditation to get total duration
+        const session = await Meditation_1.MeditationSession.findOne({ _id: sessionId, userId }).populate('meditationId');
         if (!session) {
             return res.status(404).json({
                 error: "Meditation session not found"
             });
         }
+        const meditation = await Meditation_1.Meditation.findById(session.meditationId);
+        if (!meditation) {
+            return res.status(404).json({
+                error: "Meditation not found"
+            });
+        }
+        // Calculate listen percentage and if it counts (>50% listened)
+        const totalDurationSeconds = meditation.duration * 60; // Convert minutes to seconds
+        const listenedDurationSeconds = listenedDuration || 0;
+        const listenPercentage = totalDurationSeconds > 0
+            ? Math.round((listenedDurationSeconds / totalDurationSeconds) * 100)
+            : 0;
+        const counted = listenPercentage >= 50; // Only count if >50% listened
+        // Update the session with listened duration, percentage, and counted flag
+        const updatedSession = await Meditation_1.MeditationSession.findOneAndUpdate({ _id: sessionId, userId }, {
+            listenedDuration: listenedDurationSeconds,
+            listenPercentage,
+            counted,
+            rating,
+            notes,
+            completedAt: new Date(),
+        }, { new: true });
         res.json({
             success: true,
             message: "Meditation session completed",
-            session,
+            session: updatedSession,
+            counted, // Indicate if this session counts towards free tier limit
         });
     }
     catch (error) {

@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { logger } from './utils/logger';
+import { securityHeaders, securityLogging } from './middleware/security';
 
 // Version: 1.0.1 - Email verification enabled
 // Import routes
@@ -29,11 +30,13 @@ import userRoutes from './routes/user';
 import cbtRoutes from './routes/cbt';
 import cleanupRoutes from './routes/cleanup';
 import apiRoutes from './routes/index';
+import personalizationRoutes from './routes/personalization';
 import { connectDB } from './utils/db';
 import { healthCheck, readinessCheck, keepAlive } from './controllers/healthController';
 import seedCommunityData from './scripts/seedCommunity';
 import { CommunitySpace } from './models/Community';
 import { startWeeklyReportScheduler } from './jobs/weeklyReportScheduler';
+import { startPersonalizationAnalysisJob } from './jobs/personalizationAnalysisJob';
 
 // Load environment variables
 dotenv.config();
@@ -45,61 +48,73 @@ const PORT = process.env.PORT || 8000;
 (http.globalAgent as any).keepAlive = true;
 (https.globalAgent as any).keepAlive = true;
 
-// CORS configuration
-const defaultFrontend = 'https://ai-therapist-agent-theta.vercel.app';
+// CORS configuration - Security: Restricted to specific domains
+const defaultFrontend = 'https://hopementalhealthsupport.xyz';
 const allowedOrigins = (() => {
   if (process.env.NODE_ENV === 'production') {
-    return [
+    // Production: Only allow specific domains
+    const origins = [
       process.env.FRONTEND_URL || defaultFrontend,
-      'https://ai-therapist-agent-theta.vercel.app',
-      'https://ai-therapist-agent-2hx8i5cf8-kelvinsalehs-projects.vercel.app',
       'https://hopementalhealthsupport.xyz',
-  'http://hopementalhealthsupport.xyz',
-  'https://www.hopementalhealthsupport.xyz',
-  'http://www.hopementalhealthsupport.xyz'
-    ].filter((url): url is string => Boolean(url));
+      'https://www.hopementalhealthsupport.xyz',
+      // Allow specific Vercel deployment if needed
+      process.env.VERCEL_PRODUCTION_URL,
+    ].filter((url): url is string => Boolean(url) && url.startsWith('https://'));
+    
+    // Remove duplicates
+    return [...new Set(origins)];
   }
+  
+  // Development: Allow localhost and specified development URLs
   return [
     'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:3002',
     'http://localhost:8080',  // Flutter web default
     'http://127.0.0.1:8080',  // Flutter web (127.0.0.1 variant)
-    process.env.FRONTEND_URL || defaultFrontend,
-    'https://ai-therapist-agent-theta.vercel.app',
-    'https://ai-therapist-agent-2hx8i5cf8-kelvinsalehs-projects.vercel.app',
-  'https://hopementalhealthsupport.xyz',
-  'http://hopementalhealthsupport.xyz',
-  'https://www.hopementalhealthsupport.xyz',
-  'http://www.hopementalhealthsupport.xyz'
+    process.env.FRONTEND_URL,
+    // Allow development domains if specified
+    process.env.DEV_FRONTEND_URL,
   ].filter((url): url is string => Boolean(url));
 })();
 
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    // In development, allow all localhost origins (flexible for Flutter web random ports)
-    if (process.env.NODE_ENV !== 'production') {
-      if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+    // Security: In production, require origin for web requests
+    if (process.env.NODE_ENV === 'production') {
+      // Allow requests with no origin ONLY for mobile apps (identified by API key or JWT in Authorization header)
+      if (!origin) {
+        // Mobile apps will authenticate via JWT token, allow them
         return callback(null, true);
       }
+      
+      // Check if origin is in the allowed list
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      
+      // Log and reject unauthorized origins
+      logger.warn(`CORS blocked origin: ${origin}`, {
+        allowedOrigins: allowedOrigins.join(', '),
+        ip: origin
+      });
+      
+      return callback(new Error('Not allowed by CORS policy'), false);
     }
     
-    // Check if origin is in the allowed list
+    // Development: More permissive for localhost
+    if (!origin) return callback(null, true);
+    
+    if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+      return callback(null, true);
+    }
+    
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
     
-    // Allow all Vercel preview deployments for this project
-    if (origin.endsWith('.vercel.app') && origin.includes('ai-therapist-agent')) {
-      return callback(null, true);
-    }
-    
-    // Log the blocked origin for debugging
-    console.log(`CORS blocked origin: ${origin}`);
-    console.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
+    // Log the blocked origin in development
+    logger.warn(`CORS blocked origin in development: ${origin}`);
     
     return callback(new Error('Not allowed by CORS'), false);
   },
@@ -113,29 +128,41 @@ const corsOptions = {
     "Accept",
     "Origin"
   ],
-  exposedHeaders: ["Content-Length", "X-Foo", "X-Bar"],
+  exposedHeaders: ["Content-Length"],
   maxAge: 86400 // 24 hours
 };
 
-// Middleware
-app.use(helmet());
+// Security Middleware
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000, // 1 year
+    includeSubDomains: true,
+    preload: true
+  },
+  frameguard: { action: 'deny' },
+  noSniff: true,
+  xssFilter: true,
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+}));
 
-// CORS debugging middleware
-app.use((req, res, next) => {
-  console.log(`CORS Request - Origin: ${req.headers.origin}, Method: ${req.method}, Path: ${req.path}`);
-  next();
-});
+// Additional security headers
+app.use(securityHeaders);
 
+// Security logging
+app.use(securityLogging);
+
+// Security: Apply CORS middleware
 app.use(cors(corsOptions));
 
-// Additional CORS headers for debugging
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-Requested-With, Accept, Origin');
-  next();
-});
+// Security: Remove overly permissive CORS headers (cors middleware handles this properly)
 
 app.use(express.json({ limit: '200mb' }));
 app.use(express.urlencoded({ extended: true, limit: '200mb' }));
@@ -180,6 +207,7 @@ app.use("/playlists", playlistRoutes);
 app.use("/user", userRoutes);
 app.use("/cbt", cbtRoutes);
 app.use("/cleanup", cleanupRoutes);
+app.use("/personalization", personalizationRoutes);
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -251,6 +279,14 @@ connectDB()
       logger.info('Weekly report scheduler started');
     } catch (e) {
       logger.warn('Failed to start weekly report scheduler', e);
+    }
+    
+    // Start personalization analysis job
+    try {
+      startPersonalizationAnalysisJob();
+      logger.info('Personalization analysis job started');
+    } catch (e) {
+      logger.warn('Failed to start personalization analysis job', e);
     }
     
     app.listen(PORT, () => {

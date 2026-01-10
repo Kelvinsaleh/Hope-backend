@@ -11,7 +11,7 @@ async function isPremiumUser(userId: Types.ObjectId): Promise<boolean> {
   const sub = await Subscription.findOne({
     userId,
     status: "active",
-    endDate: { $gt: new Date() },
+    expiresAt: { $gt: new Date() },
   }).lean();
   if (sub) return true;
 
@@ -19,30 +19,43 @@ async function isPremiumUser(userId: Types.ObjectId): Promise<boolean> {
   const user = await User.findById(userId).lean();
   if (user?.subscription?.isActive && user.subscription.tier === "premium") return true;
 
+  // Check if user has an active trial
+  if (user?.trialEndsAt) {
+    const now = new Date();
+    if (now < new Date(user.trialEndsAt)) {
+      return true; // User has an active trial
+    }
+  }
+
   return false;
 }
 
-export async function enforceChatDailyLimit(req: Request, res: Response, next: NextFunction) {
+// Free tier: 150 messages per month (can use anytime until exhausted)
+export async function enforceChatMonthlyLimit(req: Request, res: Response, next: NextFunction) {
   try {
     const userId = new Types.ObjectId(req.user._id);
     if (await isPremiumUser(userId)) return next();
 
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
 
-    // Count all messages sent by the user today across all sessions
+    // Count all messages sent by the user this month across all sessions
     const sessions = await ChatSession.aggregate([
       { $match: { userId } },
       { $unwind: "$messages" },
-      { $match: { "messages.timestamp": { $gte: startOfDay }, "messages.role": "user" } },
+      { $match: { "messages.timestamp": { $gte: startOfMonth }, "messages.role": "user" } },
       { $count: "count" },
     ]);
-    const todayCount = sessions?.[0]?.count || 0;
-    if (todayCount >= 30) {
+    const monthlyCount = sessions?.[0]?.count || 0;
+    const FREE_MESSAGE_LIMIT_PER_MONTH = 150;
+    
+    if (monthlyCount >= FREE_MESSAGE_LIMIT_PER_MONTH) {
       return res.status(429).json({
         success: false,
-        error: "Daily chat limit reached for free plan. Upgrade to Premium for unlimited chats.",
-        limits: { dailyChats: 30 },
+        error: "Monthly message limit reached (150 messages/month). Upgrade to Premium for unlimited messages.",
+        limits: { monthlyMessages: FREE_MESSAGE_LIMIT_PER_MONTH },
+        remaining: 0,
       });
     }
     next();
@@ -51,38 +64,44 @@ export async function enforceChatDailyLimit(req: Request, res: Response, next: N
   }
 }
 
-export async function enforceJournalWeeklyLimit(req: Request, res: Response, next: NextFunction) {
-  try {
-    const userId = new Types.ObjectId(req.user._id);
-    if (await isPremiumUser(userId)) return next();
+// Legacy name for backward compatibility
+export const enforceChatDailyLimit = enforceChatMonthlyLimit;
 
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const count = await JournalEntry.countDocuments({ userId, createdAt: { $gte: sevenDaysAgo } });
-    if (count >= 3) {
-      return res.status(429).json({
-        success: false,
-        error: "Weekly journal limit reached for free plan. Upgrade to Premium for more entries.",
-        limits: { weeklyJournals: 3 },
-      });
-    }
-    next();
-  } catch (error) {
-    return res.status(500).json({ success: false, error: "Failed to enforce journal limits" });
-  }
+// Journal entries are now unlimited for free tier (only AI insights and CBT records require premium)
+// This middleware is kept for backward compatibility but no longer enforces limits
+export async function enforceJournalWeeklyLimit(req: Request, res: Response, next: NextFunction) {
+  // Journal entries are unlimited for free tier - no limit enforcement needed
+  // Premium checks for AI insights and CBT records are handled in their respective routes/controllers
+  return next();
 }
 
-export async function enforceMeditationWeeklyLimit(req: Request, res: Response, next: NextFunction) {
+// Free tier: 10 meditations per month (only counted if >50% listened)
+// Note: This middleware checks completion, but the actual >50% check should be done
+// when recording meditation progress in the meditation controller
+export async function enforceMeditationMonthlyLimit(req: Request, res: Response, next: NextFunction) {
   try {
     const userId = new Types.ObjectId(req.user._id);
     if (await isPremiumUser(userId)) return next();
 
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const count = await MeditationSession.countDocuments({ userId, completedAt: { $gte: sevenDaysAgo } });
-    if (count >= 10) {
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    // Count meditations completed this month (where user listened >50%)
+    // Only count sessions where counted=true (which means >50% was listened)
+    const count = await MeditationSession.countDocuments({ 
+      userId, 
+      completedAt: { $gte: startOfMonth },
+      counted: true, // Only count meditations where >50% was listened
+    });
+    
+    const FREE_MEDITATION_LIMIT_PER_MONTH = 10;
+    if (count >= FREE_MEDITATION_LIMIT_PER_MONTH) {
       return res.status(429).json({
         success: false,
-        error: "Weekly meditation limit reached for free plan. Upgrade to Premium for unlimited listening.",
-        limits: { weeklyMeditations: 10 },
+        error: "Monthly meditation limit reached (10 meditations/month). Upgrade to Premium for unlimited meditations.",
+        limits: { monthlyMeditations: FREE_MEDITATION_LIMIT_PER_MONTH },
+        remaining: 0,
       });
     }
     next();
@@ -90,5 +109,8 @@ export async function enforceMeditationWeeklyLimit(req: Request, res: Response, 
     return res.status(500).json({ success: false, error: "Failed to enforce meditation limits" });
   }
 }
+
+// Legacy name for backward compatibility
+export const enforceMeditationWeeklyLimit = enforceMeditationMonthlyLimit;
 
 

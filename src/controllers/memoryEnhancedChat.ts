@@ -4,10 +4,25 @@ import { ChatSession } from "../models/ChatSession";
 import { JournalEntry } from "../models/JournalEntry";
 import { Mood } from "../models/Mood";
 import { MeditationSession } from "../models/Meditation";
+import { UserProfile } from "../models/UserProfile";
 import { User } from "../models/User";
+import { LongTermMemoryModel } from "../models/LongTermMemory";
 import { logger } from "../utils/logger";
 import { Types } from "mongoose";
 import { buildHopePrompt, normalizeMood, getRandomExpression } from "../utils/hopePersonality";
+import {
+  truncateMessages,
+  summarizeMessages,
+  formatConversationWithSummary,
+  extractKeyFacts,
+  estimateTokens,
+} from "../utils/conversationOptimizer";
+import {
+  buildPersonalizationContext,
+  buildEnforcementRules,
+  buildUserProfileSummary,
+  trackEngagementSignal,
+} from "../services/personalization/personalizationBuilder";
 
 // Initialize Gemini API - Use environment variable or warn
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
@@ -46,6 +61,7 @@ const MAX_RETRY_DELAY = 30000;
 interface UserMemory {
   profile: {
     name: string;
+    bio?: string;
     preferences: {
       communicationStyle: 'gentle' | 'direct' | 'supportive';
       topicsToAvoid: string[];
@@ -53,6 +69,8 @@ interface UserMemory {
     };
     goals: string[];
     challenges: string[];
+    interests?: string[];
+    experienceLevel?: 'beginner' | 'intermediate' | 'experienced';
   };
   journalEntries: any[];
   meditationHistory: any[];
@@ -339,6 +357,92 @@ function generateFallbackResponse(aiContext: string): string {
   return "I'm having technical trouble right now, but what you're going through matters. Take some breaths, and I'll be back soon. If you need immediate help, reach out to a crisis service.";
 }
 
+/**
+ * Stream AI response using Server-Sent Events (SSE) for reduced perceived latency
+ * Note: This can be enabled by adding ?stream=true query param
+ */
+async function streamAIResponse(
+  req: Request,
+  res: Response,
+  prompt: string,
+  sessionId: string,
+  userId: string,
+  userMessage: string,
+  session: any
+): Promise<void> {
+  try {
+    // Set up SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+
+    if (!genAI) {
+      const fallback = generateFallbackResponse(prompt);
+      res.write(`data: ${JSON.stringify({ type: 'complete', content: fallback, isFailover: true })}\n\n`);
+      res.end();
+      return;
+    }
+
+    try {
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      
+      // Generate content with streaming enabled
+      const result = await model.generateContentStream({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.8,
+          topP: 0.95,
+        },
+      });
+
+      let fullResponse = '';
+      
+      // Stream chunks as they arrive
+      for await (const chunk of result.stream) {
+        const chunkText = chunk.text();
+        if (chunkText) {
+          fullResponse += chunkText;
+          // Send chunk to client
+          res.write(`data: ${JSON.stringify({ type: 'chunk', content: chunkText })}\n\n`);
+        }
+      }
+
+      // Send completion signal
+      res.write(`data: ${JSON.stringify({ type: 'complete', content: fullResponse.trim() })}\n\n`);
+      
+      // Save to session asynchronously (don't block response)
+      session.messages.push({
+        role: "user",
+        content: userMessage,
+        timestamp: new Date(),
+      });
+      session.messages.push({
+        role: "assistant",
+        content: fullResponse.trim(),
+        timestamp: new Date(),
+      });
+      session.status = "active";
+      session.save().catch((error: any) => {
+        logger.error('Error saving streamed message:', error);
+      });
+
+      logger.info(`Streamed AI response successfully, length: ${fullResponse.length}`);
+      res.end();
+    } catch (streamError: any) {
+      logger.error('Streaming error:', streamError);
+      const fallback = generateFallbackResponse(prompt);
+      res.write(`data: ${JSON.stringify({ type: 'complete', content: fallback, isFailover: true })}\n\n`);
+      res.end();
+    }
+  } catch (error: any) {
+    logger.error('Error in streamAIResponse:', error);
+    const fallback = generateFallbackResponse(prompt);
+    res.write(`data: ${JSON.stringify({ type: 'complete', content: fallback, isFailover: true })}\n\n`);
+    res.end();
+  }
+}
+
 export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => {
   try {
     const { message, sessionId, userId, context, suggestions, userMemory, memoryVersion } = req.body;
@@ -366,8 +470,10 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
     }
 
     // Get or create chat session
+    // Load with all messages for full conversation history (don't use .lean() so we can save later)
     let session = await ChatSession.findOne({ sessionId });
     if (!session) {
+      // Create new session if it doesn't exist
       session = new ChatSession({
         sessionId,
         userId: new Types.ObjectId(userId),
@@ -375,6 +481,7 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
         status: "active",
         messages: [],
       });
+      await session.save();
     }
 
     // Use memoryVersion or a compact request to avoid rebuilding full memory every call.
@@ -512,8 +619,60 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
       ? normalizeMood(memoryData.moodPatterns[0].mood) 
       : 'neutral';
 
-    // Build user context string
+    // ============================================================================
+    // PERSONALIZATION INTEGRATION
+    // ============================================================================
+    // Fetch personalization context (includes user preferences, behavioral patterns, summaries)
+    const personalizationContext = await buildPersonalizationContext(userId, true);
+    
+    // Build enforcement rules (mandatory system instructions)
+    const enforcementRules = buildEnforcementRules(personalizationContext);
+    
+    // Build user profile summary (context for AI)
+    const profileSummary = buildUserProfileSummary(personalizationContext);
+    
+    // Build user context string with comprehensive profile information
     let userContext = `\n**What you know about ${user.name || 'this person'}:**\n`;
+    
+    // Profile information (goals, challenges, preferences)
+    const profile = memoryData.profile;
+    if (profile) {
+      // Communication style and experience level
+      if (profile.preferences?.communicationStyle) {
+        userContext += `- Communication style: ${profile.preferences.communicationStyle}\n`;
+      }
+      if (profile.experienceLevel) {
+        userContext += `- Experience level with therapy/mental health: ${profile.experienceLevel}\n`;
+      }
+      
+      // Bio if available
+      if (profile.bio && profile.bio.trim()) {
+        const bioPreview = profile.bio.length > 200 
+          ? profile.bio.substring(0, 200) + '...' 
+          : profile.bio;
+        userContext += `- About them: ${bioPreview}\n`;
+      }
+      
+      // Goals
+      if (profile.goals && profile.goals.length > 0) {
+        userContext += `- Goals: ${profile.goals.slice(0, 5).join(', ')}${profile.goals.length > 5 ? '...' : ''}\n`;
+      }
+      
+      // Challenges
+      if (profile.challenges && profile.challenges.length > 0) {
+        userContext += `- Current challenges: ${profile.challenges.slice(0, 5).join(', ')}${profile.challenges.length > 5 ? '...' : ''}\n`;
+      }
+      
+      // Interests
+      if (profile.interests && profile.interests.length > 0) {
+        userContext += `- Interests: ${profile.interests.slice(0, 5).join(', ')}${profile.interests.length > 5 ? '...' : ''}\n`;
+      }
+      
+      userContext += '\n';
+    }
+    
+    // Activity history
+    userContext += `**Activity History:**\n`;
     userContext += `- ${memoryData.journalEntries.length} journal entries recently\n`;
     userContext += `- ${memoryData.moodPatterns.length} mood records (recent mood: ${memoryData.moodPatterns[0]?.mood || 'unknown'}/10)\n`;
     userContext += `- ${memoryData.meditationHistory.length} meditation sessions completed\n`;
@@ -524,17 +683,201 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
       userContext += `\n**Recent journal themes:** ${memoryData.insights.slice(0, 3).join(', ') || 'general reflection'}\n`;
     }
 
-    // Build conversation history from memory
-    const conversationHistory = memoryData.therapySessions
-      .slice(-3)
-      .map((session: any) => `Previous session: [${session.date}]`)
-      .join('\n');
+    // ============================================================================
+    // OPTIMIZED CONVERSATION HISTORY FOR AI PROMPT (ONLY)
+    // ============================================================================
+    // IMPORTANT: This truncation ONLY affects what's sent to the AI, NOT the stored messages!
+    // - ALL messages are saved to the database/session (no truncation of user data)
+    // - Only the conversation history sent to AI is truncated/optimized for token limits
+    // - This improves AI processing speed while preserving complete user conversation history
+    // ============================================================================
+    let conversationHistory = '';
+    
+    // PRIORITY 1: Current session - prepare message copy for AI context (NOT database)
+    // Get ALL messages from frontend context or database (these remain untouched)
+    let allCurrentSessionMessages: Array<{ role: string; content: string; timestamp?: Date }> = [];
+    
+    if (context && context.recentUserMessages && Array.isArray(context.recentUserMessages) && context.recentUserMessages.length > 0) {
+      // Frontend sent full conversation - create a copy for AI processing (original untouched)
+      allCurrentSessionMessages = context.recentUserMessages.map((msg: any) => ({
+        role: msg.role || 'user',
+        content: msg.content || '',
+        timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
+      }));
+      logger.debug(`✅ Using frontend conversation context (${allCurrentSessionMessages.length} messages) - ALL will be saved to DB`);
+    } else if (session && session.messages && session.messages.length > 0) {
+      // Fallback: Use messages from database session (create copy for AI processing)
+      allCurrentSessionMessages = session.messages.map((msg: any) => ({
+        role: msg.role,
+        content: msg.content,
+        timestamp: msg.timestamp || new Date(),
+      }));
+      logger.debug(`✅ Using database session messages (${allCurrentSessionMessages.length} messages) - ALL will be preserved`);
+    }
 
-    // Use the mood-adaptive Hope prompt builder
-    const hopePrompt = buildHopePrompt(currentMood, conversationHistory + `\n\nUser: ${message}`, `${userContext}\nRespond concisely in 2-4 lines unless the user asks for step-by-step or the situation clearly requires more detail.`);
-    logger.info(`AI context created, length: ${hopePrompt.length}`);
+    // IMPORTANT: Truncation ONLY for AI prompt - all messages still saved to DB below
+    // Create an optimized copy for AI context (token-limited, summarized if needed)
+    const { recentMessages, summary, truncatedCount, totalTokens } = truncateMessages(
+      allCurrentSessionMessages, // Copy of all messages (original untouched)
+      4000, // Max tokens for AI context (leaving room for prompt + response)
+      40   // Keep last 40 messages in AI context
+    );
+
+    // If messages were truncated for AI, generate a summary of old messages
+    let oldMessagesSummary: string | undefined;
+    if (truncatedCount > 0 && recentMessages.length < allCurrentSessionMessages.length) {
+      const oldMessages = allCurrentSessionMessages.slice(0, allCurrentSessionMessages.length - recentMessages.length);
+      logger.info(`Truncated ${truncatedCount} messages for AI context only (all ${allCurrentSessionMessages.length} messages will still be saved to DB)`);
+      
+      try {
+        oldMessagesSummary = await summarizeMessages(oldMessages, genAI);
+        logger.debug(`Generated summary for ${oldMessages.length} old messages (for AI context only)`);
+      } catch (summaryError: any) {
+        logger.warn('Failed to generate summary:', summaryError.message);
+        oldMessagesSummary = `Earlier conversation had ${oldMessages.length} messages before the current context.`;
+      }
+    }
+
+    // Extract key facts from ALL messages for persistent memory (async, don't block)
+    // This uses the full message history, not the truncated version
+    if (allCurrentSessionMessages.length > 10) {
+      const keyFacts = extractKeyFacts(allCurrentSessionMessages, 10); // Use ALL messages for fact extraction
+      if (keyFacts.length > 0) {
+        // Store key facts asynchronously (don't wait for completion)
+        storeKeyFacts(userId, keyFacts).catch((error: any) => {
+          logger.warn('Failed to store key facts:', error.message);
+        });
+      }
+    }
+
+    // Format current conversation for AI prompt (truncated/summarized version)
+    const currentConversationFormatted = formatConversationWithSummary(oldMessagesSummary, recentMessages);
+    if (currentConversationFormatted) {
+      conversationHistory += `**Current conversation:**\n${currentConversationFormatted}\n\n`;
+      logger.info(`AI context optimized: ${recentMessages.length} recent messages${oldMessagesSummary ? ' + summary' : ''} (${totalTokens} tokens) - but all ${allCurrentSessionMessages.length} messages saved to DB`);
+    }
+
+    // PRIORITY 2: Persistent memory - key facts from LongTermMemory
+    try {
+      const persistentMemories = await LongTermMemoryModel.find({
+        userId: new Types.ObjectId(userId),
+      })
+        .sort({ importance: -1, timestamp: -1 })
+        .limit(15) // Top 15 most important facts
+        .lean();
+
+      if (persistentMemories.length > 0) {
+        conversationHistory += `**Important context (from previous conversations):**\n`;
+        const groupedMemories: Record<string, string[]> = {};
+        
+        persistentMemories.forEach((memory: any) => {
+          if (!groupedMemories[memory.type]) {
+            groupedMemories[memory.type] = [];
+          }
+          groupedMemories[memory.type].push(`- ${memory.content}`);
+        });
+
+        Object.entries(groupedMemories).forEach(([type, items]) => {
+          conversationHistory += `${type.replace('_', ' ').toUpperCase()}: ${items.join(' ')}\n`;
+        });
+        conversationHistory += '\n';
+        logger.debug(`Included ${persistentMemories.length} persistent memories`);
+      }
+    } catch (memoryError: any) {
+      logger.warn('Failed to fetch persistent memories:', memoryError.message);
+    }
+
+    // PRIORITY 3: Previous sessions - truncated for efficiency
+    // Limit to last 2 previous sessions, and last 15 messages per session (reduced for performance)
+    if (memoryData.therapySessions && memoryData.therapySessions.length > 0) {
+      const previousSessions = memoryData.therapySessions
+        .filter((s: any) => {
+          const sId = s.sessionId || s._id?.toString();
+          return sId && sId !== sessionId;
+        })
+        .slice(0, 2); // Last 2 previous sessions (reduced from 3 for performance)
+
+      if (previousSessions.length > 0) {
+        const previousSessionIds = previousSessions
+          .map((s: any) => s.sessionId || s._id?.toString())
+          .filter(Boolean);
+        
+        try {
+          const previousSessionsWithMessages = await ChatSession.find({
+            sessionId: { $in: previousSessionIds },
+            userId: new Types.ObjectId(userId)
+          })
+            .select('sessionId startTime messages')
+            .lean()
+            .limit(2);
+
+          if (previousSessionsWithMessages.length > 0) {
+            conversationHistory += `**Previous conversations (recent context):**\n`;
+            previousSessionsWithMessages.forEach((prevSession: any) => {
+              if (prevSession.messages && prevSession.messages.length > 0) {
+                // Apply truncation to previous sessions too
+                const prevMessages = prevSession.messages.map((m: any) => ({
+                  role: m.role,
+                  content: m.content,
+                  timestamp: m.timestamp,
+                }));
+                const { recentMessages: prevRecent } = truncateMessages(prevMessages, 1000, 15); // 15 messages max per previous session
+                
+                const sessionMessages = prevRecent
+                  .map((msg: any) => `${msg.role === 'user' ? 'User' : 'Hope'}: ${msg.content}`)
+                  .join('\n');
+                const sessionDate = prevSession.startTime 
+                  ? new Date(prevSession.startTime).toLocaleDateString()
+                  : 'Previous session';
+                conversationHistory += `\n[${sessionDate}]:\n${sessionMessages}\n`;
+              }
+            });
+            logger.debug(`Included ${previousSessionsWithMessages.length} previous sessions (truncated)`);
+          }
+        } catch (prevSessionError: any) {
+          logger.warn('Failed to fetch previous session messages:', prevSessionError.message);
+        }
+      }
+    }
+
+    // Use the mood-adaptive Hope prompt builder with optimized conversation history
+    // Optimizations applied:
+    // - Intelligent truncation (keeps recent messages, summarizes old ones)
+    // - Persistent memory integration (key facts from database)
+    // - Efficient previous session loading (truncated to 15 messages each)
+    // - Personalization rules and profile context
+    // This ensures maximum chat awareness while keeping performance optimal
+    
+    // Build final prompt with personalization
+    const fullHistory = conversationHistory + `\n\nUser: ${message}`;
+    
+    // Combine all context: user profile, personalization rules, and conversation history
+    const combinedContext = `${userContext}${profileSummary}${enforcementRules}`;
+    
+    // Default verbosity instruction (can be overridden by personalization rules)
+    const defaultVerbosity = personalizationContext?.profile.communication.verbosity === "concise"
+      ? "Respond concisely in 2-3 lines unless the user explicitly asks for more detail."
+      : personalizationContext?.profile.communication.verbosity === "detailed"
+      ? "Provide comprehensive responses with examples when helpful (4-8 sentences typically)."
+      : "Respond concisely in 2-4 lines unless the user asks for step-by-step or the situation clearly requires more detail.";
+    
+    const hopePrompt = buildHopePrompt(
+      currentMood, 
+      fullHistory, 
+      `${combinedContext}${defaultVerbosity}`
+    );
+    const promptTokens = estimateTokens(hopePrompt);
+    logger.info(`AI context optimized: ${promptTokens} tokens (~${Math.ceil(promptTokens / 4)} chars) - includes summary + recent messages + persistent memory + personalization`);
 
     // Generate AI response using queue system for better quota management
+    // Support streaming if requested (query param ?stream=true or Accept: text/event-stream header)
+    const shouldStream = req.query?.stream === 'true' || req.headers.accept?.includes('text/event-stream');
+    
+    if (shouldStream) {
+      // Stream response for better perceived latency
+      return streamAIResponse(req, res, hopePrompt, sessionId, userId, message, session);
+    }
+    
     logger.info(`Requesting AI response through queue system...`);
     let aiMessage: string;
     let isFailover = false;
@@ -557,7 +900,8 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
       logger.warn(`Using final fallback due to empty AI response`);
     }
 
-    // Save messages to session
+    // Save ALL messages to session/database (no truncation - complete conversation history)
+    // IMPORTANT: These messages are saved in full, regardless of what was sent to AI
     session.messages.push({
       role: "user",
       content: message,
@@ -571,7 +915,7 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
     });
 
     await session.save();
-    logger.info(`Session saved successfully for session ${sessionId}`);
+    logger.info(`Session saved successfully - all ${session.messages.length} messages preserved in database (truncation only applied to AI context)`);
 
     // Generate personalized suggestions
     const personalizedSuggestions = await generatePersonalizedSuggestions(
@@ -579,6 +923,18 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
       message,
       aiMessage
     );
+
+    // Track engagement signal asynchronously (don't block response)
+    const sessionDuration = session.endTime && session.startTime
+      ? (new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000 / 60
+      : 0;
+    trackEngagementSignal(userId, {
+      sessionLength: sessionDuration || 5, // Estimate if unknown
+      messagesCount: session.messages.length,
+      responseReceived: true,
+    }).catch((error: any) => {
+      logger.warn('Failed to track engagement signal:', error.message);
+    });
 
     res.json({
       success: true,
@@ -592,6 +948,7 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
         hasMoodData: memoryData.moodPatterns.length > 0,
         lastUpdated: memoryData.lastUpdated,
       },
+      personalizationVersion: personalizationContext?.version || 1, // Include version for caching
     });
 
   } catch (error) {
@@ -607,6 +964,73 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
     });
   }
 };
+
+/**
+ * Store key facts extracted from conversation into persistent memory
+ * This enables the AI to "remember" important details across sessions
+ */
+async function storeKeyFacts(
+  userId: string,
+  facts: Array<{
+    type: 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference';
+    content: string;
+    importance: number;
+    tags: string[];
+    context?: string;
+  }>
+): Promise<void> {
+  if (!facts || facts.length === 0) return;
+
+  try {
+    const userIdObj = new Types.ObjectId(userId);
+    
+    // Store facts that don't already exist (avoid duplicates)
+    for (const fact of facts) {
+      // Check if similar fact already exists (simple content match for now)
+      const existing = await LongTermMemoryModel.findOne({
+        userId: userIdObj,
+        content: { $regex: new RegExp(fact.content.substring(0, 50), 'i') },
+      });
+
+      if (!existing) {
+        // Store new fact
+        await LongTermMemoryModel.create({
+          userId: userIdObj,
+          type: fact.type,
+          content: fact.content,
+          importance: fact.importance,
+          tags: fact.tags,
+          context: fact.context,
+          timestamp: new Date(),
+        });
+        logger.debug(`Stored key fact: ${fact.type} - ${fact.content.substring(0, 50)}...`);
+      } else {
+        // Update importance if new fact is more important
+        if (fact.importance > existing.importance) {
+          existing.importance = fact.importance;
+          existing.timestamp = new Date();
+          await existing.save();
+          logger.debug(`Updated importance for existing fact: ${fact.content.substring(0, 50)}...`);
+        }
+      }
+    }
+
+    // Cleanup: Remove old/low-importance memories to keep database size manageable
+    // Keep only top 100 most important memories per user
+    const userMemories = await LongTermMemoryModel.find({ userId: userIdObj })
+      .sort({ importance: -1, timestamp: -1 })
+      .lean();
+    
+    if (userMemories.length > 100) {
+      const idsToDelete = userMemories.slice(100).map(m => m._id);
+      await LongTermMemoryModel.deleteMany({ _id: { $in: idsToDelete } });
+      logger.debug(`Cleaned up ${idsToDelete.length} old memories for user ${userId}`);
+    }
+  } catch (error: any) {
+    logger.error('Error storing key facts:', error);
+    // Don't throw - this is non-critical
+  }
+}
 
 async function gatherUserMemory(userId: string): Promise<UserMemory> {
   try {
@@ -635,17 +1059,31 @@ async function gatherUserMemory(userId: string): Promise<UserMemory> {
       .limit(5)
       .lean();
 
-    return {
-      profile: {
-        name: "User", // Will be populated from user data
-        preferences: {
-          communicationStyle: 'gentle',
-          topicsToAvoid: [],
-          preferredTechniques: [],
-        },
-        goals: [],
-        challenges: [],
+    // Fetch actual user profile from database
+    let userProfile: any = null;
+    try {
+      userProfile = await UserProfile.findOne({ userId: new Types.ObjectId(userId) }).lean();
+    } catch (profileError) {
+      logger.warn("Failed to fetch user profile for memory:", profileError);
+    }
+
+    // Build profile object from database data or use defaults
+    const profileData = {
+      name: "User", // Will be populated from user data if available
+      bio: userProfile?.bio || '',
+      goals: userProfile?.goals || [],
+      challenges: userProfile?.challenges || [],
+      interests: userProfile?.interests || [],
+      preferences: {
+        communicationStyle: userProfile?.communicationStyle || 'gentle',
+        topicsToAvoid: [], // Can be populated if stored in profile
+        preferredTechniques: [], // Can be populated if stored in profile
       },
+      experienceLevel: userProfile?.experienceLevel || 'beginner',
+    };
+
+    return {
+      profile: profileData,
       journalEntries,
       meditationHistory,
       moodPatterns,
@@ -658,13 +1096,16 @@ async function gatherUserMemory(userId: string): Promise<UserMemory> {
     return {
       profile: {
         name: "User",
+        bio: '',
+        goals: [],
+        challenges: [],
+        interests: [],
         preferences: {
           communicationStyle: 'gentle',
           topicsToAvoid: [],
           preferredTechniques: [],
         },
-        goals: [],
-        challenges: [],
+        experienceLevel: 'beginner',
       },
       journalEntries: [],
       meditationHistory: [],

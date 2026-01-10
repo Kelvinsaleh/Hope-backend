@@ -17,6 +17,7 @@ export interface ICommunityPost extends Document {
   mood?: string;
   isAnonymous: boolean;
   images?: string[]; // Array of image URLs from Vercel Blob
+  videos?: string[]; // Array of video URLs (max 1, 60 seconds max)
   reactions: {
     heart: mongoose.Types.ObjectId[];
     support: mongoose.Types.ObjectId[];
@@ -100,6 +101,7 @@ const CommunityPostSchema = new Schema<ICommunityPost>({
   mood: { type: String },
   isAnonymous: { type: Boolean, default: false },
   images: [{ type: String }], // Array of image URLs
+  videos: [{ type: String }], // Array of video URLs (max 1, 60 seconds)
   reactions: {
     heart: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     support: [{ type: Schema.Types.ObjectId, ref: 'User' }],
