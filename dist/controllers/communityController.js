@@ -1,7 +1,41 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.saveImageMetadata = exports.sharePost = exports.deleteComment = exports.deletePost = exports.getFeed = exports.getCommunityStats = exports.getRecentActivity = exports.getDailyPrompts = exports.joinChallenge = exports.getActiveChallenges = exports.createComment = exports.getPostComments = exports.reactToPost = exports.createPost = exports.getSpacePosts = exports.getCommunitySpaces = void 0;
+exports.saveImageMetadata = exports.uploadVideo = exports.uploadImage = exports.sharePost = exports.deleteComment = exports.deletePost = exports.getFeed = exports.getCommunityStats = exports.getRecentActivity = exports.getDailyPrompts = exports.joinChallenge = exports.getActiveChallenges = exports.createComment = exports.getPostComments = exports.reactToPost = exports.createPost = exports.getSpacePosts = exports.getCommunitySpaces = void 0;
 const mongoose_1 = require("mongoose");
+const blob_1 = require("@vercel/blob");
 const communityModeration_1 = require("../middleware/communityModeration");
 const logger_1 = require("../utils/logger");
 const Community_1 = require("../models/Community");
@@ -108,7 +142,7 @@ exports.getSpacePosts = getSpacePosts;
 const createPost = async (req, res) => {
     try {
         const userId = new mongoose_1.Types.ObjectId(req.user._id);
-        let { spaceId, content, mood, isAnonymous, images } = req.body;
+        let { spaceId, content, mood, isAnonymous, images, videos } = req.body;
         // Validate spaceId
         if (!spaceId || spaceId.trim() === '') {
             return res.status(400).json({
@@ -156,6 +190,17 @@ const createPost = async (req, res) => {
         if (Array.isArray(images) && images.length > 6) {
             images = images.slice(0, 6);
         }
+        // Enforce max 1 video (60 seconds validated on frontend)
+        if (Array.isArray(videos) && videos.length > 1) {
+            return res.status(400).json({
+                success: false,
+                error: 'Only one video (up to 60 seconds) is allowed per post'
+            });
+        }
+        // Ensure videos is an array or undefined
+        if (videos && !Array.isArray(videos)) {
+            videos = [videos];
+        }
         // Moderate content
         const moderation = await communityModeration_1.CommunityModeration.moderateContent(content);
         if (!moderation.isSafe) {
@@ -175,6 +220,7 @@ const createPost = async (req, res) => {
             mood,
             isAnonymous: isAnonymous || false,
             images: images || [],
+            videos: videos && videos.length > 0 ? videos : undefined,
             isModerated: !moderation.isSafe
         });
         await post.save();
@@ -206,7 +252,7 @@ const reactToPost = async (req, res) => {
         const userId = new mongoose_1.Types.ObjectId(req.user._id);
         const { postId } = req.params;
         const { reactionType } = req.body; // 'heart', 'support', 'growth'
-        const post = await Community_1.CommunityPost.findById(postId);
+        const post = await Community_1.CommunityPost.findById(postId).populate('userId');
         if (!post) {
             return res.status(404).json({
                 success: false,
@@ -224,6 +270,17 @@ const reactToPost = async (req, res) => {
         else {
             // Add reaction
             post.reactions[reactionType].push(userId);
+            // Create notification for post owner (if not self-reaction)
+            const postOwnerId = post.userId;
+            if (postOwnerId && !postOwnerId._id.equals(userId)) {
+                const { createNotification } = await Promise.resolve().then(() => __importStar(require('./notificationController')));
+                await createNotification({
+                    userId: postOwnerId._id,
+                    type: 'like',
+                    actorId: userId,
+                    relatedPostId: post._id,
+                });
+            }
         }
         await post.save();
         res.json({
@@ -312,11 +369,47 @@ const createComment = async (req, res) => {
             isModerated: !moderation.isSafe
         });
         await comment.save();
+        // Get post to find owner for notifications
+        const post = await Community_1.CommunityPost.findById(postObjectId).populate('userId');
+        if (!post) {
+            return res.status(404).json({
+                success: false,
+                error: 'Post not found'
+            });
+        }
         // Add comment to post
         await Community_1.CommunityPost.findByIdAndUpdate(postObjectId, {
             $push: { comments: comment._id }
         });
         await comment.populate('userId', 'username');
+        // Create notification for post owner (if not self-comment)
+        const postOwnerId = post.userId;
+        if (postOwnerId && !postOwnerId._id.equals(userId)) {
+            const { createNotification } = await Promise.resolve().then(() => __importStar(require('./notificationController')));
+            await createNotification({
+                userId: postOwnerId._id,
+                type: parentCommentId ? 'reply' : 'comment',
+                actorId: userId,
+                relatedPostId: post._id,
+                relatedCommentId: parentCommentId ? new mongoose_1.Types.ObjectId(parentCommentId) : comment._id,
+            });
+            // If replying to a comment, notify the comment owner too
+            if (parentCommentId) {
+                const parentComment = await Community_1.CommunityComment.findById(parentCommentId).populate('userId');
+                if (parentComment) {
+                    const parentCommentOwnerId = parentComment.userId;
+                    if (parentCommentOwnerId && !parentCommentOwnerId._id.equals(userId) && !parentCommentOwnerId._id.equals(postOwnerId._id)) {
+                        await createNotification({
+                            userId: parentCommentOwnerId._id,
+                            type: 'reply',
+                            actorId: userId,
+                            relatedPostId: post._id,
+                            relatedCommentId: parentComment._id,
+                        });
+                    }
+                }
+            }
+        }
         res.status(201).json({
             success: true,
             comment,
@@ -715,7 +808,101 @@ const sharePost = async (req, res) => {
     }
 };
 exports.sharePost = sharePost;
-// Save image metadata
+// Upload image to Vercel Blob
+const uploadImage = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                error: 'No file uploaded'
+            });
+        }
+        // Validate file type
+        if (!req.file.mimetype.startsWith('image/')) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid file type. Only images are allowed.'
+            });
+        }
+        // Validate file size (max 10MB for images)
+        if (req.file.size > 10 * 1024 * 1024) {
+            return res.status(400).json({
+                success: false,
+                error: 'Image size exceeds 10MB limit'
+            });
+        }
+        // Upload to Vercel Blob
+        const pathname = `community/images/${Date.now()}_${req.file.originalname.replace(/\s+/g, '_')}`;
+        const blob = await (0, blob_1.put)(pathname, req.file.buffer, {
+            access: 'public',
+            contentType: req.file.mimetype,
+            token: process.env.BLOB_READ_WRITE_TOKEN
+        });
+        res.json({
+            success: true,
+            url: blob.url,
+            imageUrl: blob.url, // Alias for compatibility
+            message: 'Image uploaded successfully'
+        });
+    }
+    catch (error) {
+        logger_1.logger.error('Error uploading image:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to upload image'
+        });
+    }
+};
+exports.uploadImage = uploadImage;
+// Upload video to Vercel Blob (max 60 seconds, validated on frontend)
+const uploadVideo = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                error: 'No file uploaded'
+            });
+        }
+        // Validate file type
+        if (!req.file.mimetype.startsWith('video/')) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid file type. Only videos are allowed.'
+            });
+        }
+        // Validate file size (max 50MB for videos)
+        if (req.file.size > 50 * 1024 * 1024) {
+            return res.status(400).json({
+                success: false,
+                error: 'Video size exceeds 50MB limit'
+            });
+        }
+        // Note: Duration validation (60 seconds) is done on the frontend
+        // Backend just uploads the file
+        // Upload to Vercel Blob
+        const pathname = `community/videos/${Date.now()}_${req.file.originalname.replace(/\s+/g, '_')}`;
+        const blob = await (0, blob_1.put)(pathname, req.file.buffer, {
+            access: 'public',
+            contentType: req.file.mimetype,
+            token: process.env.BLOB_READ_WRITE_TOKEN
+        });
+        res.json({
+            success: true,
+            url: blob.url,
+            videoUrl: blob.url, // Alias for compatibility
+            message: 'Video uploaded successfully'
+        });
+    }
+    catch (error) {
+        logger_1.logger.error('Error uploading video:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to upload video'
+        });
+    }
+};
+exports.uploadVideo = uploadVideo;
+// Save image metadata (legacy endpoint)
 const saveImageMetadata = async (req, res) => {
     try {
         const { url, filename, contentType, size, postId, commentId, uploadedAt } = req.body;

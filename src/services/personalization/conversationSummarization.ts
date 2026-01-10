@@ -1,4 +1,4 @@
-import { Types } from "mongoose";
+import { Types, Document } from "mongoose";
 import { ConversationSummary, IConversationSummary } from "../../models/ConversationSummary";
 import { ChatSession } from "../../models/ChatSession";
 import { logger } from "../../utils/logger";
@@ -30,7 +30,7 @@ export async function generatePeriodSummary(
       summaryType,
       periodStart: { $gte: periodStart, $lte: periodEnd },
       periodEnd: { $gte: periodStart, $lte: periodEnd },
-    }).lean();
+    }).lean() as (Omit<IConversationSummary, keyof Document> & { _id: any }) | null;
 
     if (existing && existing.version > 0) {
       logger.info(`Summary already exists for user ${userId}, period ${summaryType}`);
@@ -70,11 +70,11 @@ export async function generatePeriodSummary(
     }
 
     // Extract patterns and insights
-    const patterns = extractPatternsFromSummary(summary);
-    const keyTopics = extractTopics(summary);
-    const emotionalThemes = extractEmotionalThemes(summary);
-    const insights = extractInsights(summary);
-    const actionItems = extractActionItems(summary);
+    const patterns = extractPatternsFromSummary(summary.summary);
+    const keyTopics = extractTopics(summary.summary);
+    const emotionalThemes = extractEmotionalThemes(summary.summary);
+    const insights = extractInsights(summary.summary);
+    const actionItems = extractActionItems(summary.summary);
 
     // Calculate compression metrics
     const summaryTokens = estimateTokens(summary.summary);
@@ -105,7 +105,7 @@ export async function generatePeriodSummary(
         extractedPatterns: patterns,
         confidence: summary.confidence || 0.7,
         completeness: summary.completeness || 0.7,
-        version: (existing?.version || 0) + 1,
+        version: ((existing?.version as number) || 0) + 1,
       },
       { upsert: true, new: true }
     );

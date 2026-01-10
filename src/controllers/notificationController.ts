@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import { Types } from 'mongoose';
+import { Types, Document } from 'mongoose';
 import { Notification, NotificationPreferences, BatchNotification } from '../models/Notification';
 import { CommunityPost } from '../models/Community';
-import { User } from '../models/User';
+import { User, IUser } from '../models/User';
 import { logger } from '../utils/logger';
 
 /**
@@ -55,10 +55,10 @@ export async function createNotification(params: {
     }
 
     // Get actor info
-    const actor = await User.findById(actorId).lean();
+    const actor = await User.findById(actorId).lean() as (Omit<IUser, keyof Document> & { _id: any }) | null;
     if (!actor) return;
 
-    const actorName = actor.username || actor.name || 'Someone';
+    const actorName = actor.name || 'Someone';
 
     // Generate title and body based on type
     let title = '';
@@ -130,10 +130,10 @@ async function addToBatchNotification(
 
     if (!batch) {
       // Get actor info
-      const actor = await User.findById(actorId).lean();
+      const actor = await User.findById(actorId).lean() as (Omit<IUser, keyof Document> & { _id: any }) | null;
       if (!actor) return;
 
-      const actorName = actor.username || actor.name || 'Someone';
+      const actorName = actor.name || 'Someone';
 
       let title = '';
       let body = '';
@@ -177,9 +177,9 @@ async function addToBatchNotification(
       batch.count += 1;
 
       // Update body with latest interaction
-      const actor = await User.findById(actorId).lean();
+      const actor = await User.findById(actorId).lean() as (Omit<IUser, keyof Document> & { _id: any }) | null;
       if (actor) {
-        const actorName = actor.username || actor.name || 'Someone';
+        const actorName = actor.name || 'Someone';
         if (batch.count === 2) {
           batch.body = `${batch.actorIds.length} people interacted with your post`;
         } else {
@@ -213,7 +213,7 @@ export const getNotifications = async (req: Request, res: Response) => {
     }
 
     const notifications = await Notification.find(query)
-      .populate('actorId', 'username name')
+      .populate('actorId', 'name')
       .populate('relatedPostId', 'content')
       .sort({ createdAt: -1 })
       .limit(Number(limit));
@@ -249,7 +249,7 @@ export const getBatchNotifications = async (req: Request, res: Response) => {
     }
 
     const batches = await BatchNotification.find(query)
-      .populate('actorIds', 'username name')
+      .populate('actorIds', 'name')
       .populate('relatedPostId', 'content')
       .sort({ date: -1 })
       .limit(30);

@@ -14,6 +14,7 @@ const logger_1 = require("../utils/logger");
 const mongoose_1 = require("mongoose");
 const hopePersonality_1 = require("../utils/hopePersonality");
 const conversationOptimizer_1 = require("../utils/conversationOptimizer");
+const personalizationBuilder_1 = require("../services/personalization/personalizationBuilder");
 // Initialize Gemini API - Use environment variable or warn
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 if (!GEMINI_API_KEY) {
@@ -518,6 +519,15 @@ const sendMemoryEnhancedMessage = async (req, res) => {
         const currentMood = memoryData.moodPatterns.length > 0
             ? (0, hopePersonality_1.normalizeMood)(memoryData.moodPatterns[0].mood)
             : 'neutral';
+        // ============================================================================
+        // PERSONALIZATION INTEGRATION
+        // ============================================================================
+        // Fetch personalization context (includes user preferences, behavioral patterns, summaries)
+        const personalizationContext = await (0, personalizationBuilder_1.buildPersonalizationContext)(userId, true);
+        // Build enforcement rules (mandatory system instructions)
+        const enforcementRules = (0, personalizationBuilder_1.buildEnforcementRules)(personalizationContext);
+        // Build user profile summary (context for AI)
+        const profileSummary = (0, personalizationBuilder_1.buildUserProfileSummary)(personalizationContext);
         // Build user context string with comprehensive profile information
         let userContext = `\n**What you know about ${user.name || 'this person'}:**\n`;
         // Profile information (goals, challenges, preferences)
@@ -709,11 +719,21 @@ const sendMemoryEnhancedMessage = async (req, res) => {
         // - Intelligent truncation (keeps recent messages, summarizes old ones)
         // - Persistent memory integration (key facts from database)
         // - Efficient previous session loading (truncated to 15 messages each)
+        // - Personalization rules and profile context
         // This ensures maximum chat awareness while keeping performance optimal
+        // Build final prompt with personalization
         const fullHistory = conversationHistory + `\n\nUser: ${message}`;
-        const hopePrompt = (0, hopePersonality_1.buildHopePrompt)(currentMood, fullHistory, `${userContext}\nRespond concisely in 2-4 lines unless the user asks for step-by-step or the situation clearly requires more detail.`);
+        // Combine all context: user profile, personalization rules, and conversation history
+        const combinedContext = `${userContext}${profileSummary}${enforcementRules}`;
+        // Default verbosity instruction (can be overridden by personalization rules)
+        const defaultVerbosity = personalizationContext?.profile.communication.verbosity === "concise"
+            ? "Respond concisely in 2-3 lines unless the user explicitly asks for more detail."
+            : personalizationContext?.profile.communication.verbosity === "detailed"
+                ? "Provide comprehensive responses with examples when helpful (4-8 sentences typically)."
+                : "Respond concisely in 2-4 lines unless the user asks for step-by-step or the situation clearly requires more detail.";
+        const hopePrompt = (0, hopePersonality_1.buildHopePrompt)(currentMood, fullHistory, `${combinedContext}${defaultVerbosity}`);
         const promptTokens = (0, conversationOptimizer_1.estimateTokens)(hopePrompt);
-        logger_1.logger.info(`AI context optimized: ${promptTokens} tokens (~${Math.ceil(promptTokens / 4)} chars) - includes summary + recent messages + persistent memory`);
+        logger_1.logger.info(`AI context optimized: ${promptTokens} tokens (~${Math.ceil(promptTokens / 4)} chars) - includes summary + recent messages + persistent memory + personalization`);
         // Generate AI response using queue system for better quota management
         // Support streaming if requested (query param ?stream=true or Accept: text/event-stream header)
         const shouldStream = req.query?.stream === 'true' || req.headers.accept?.includes('text/event-stream');
@@ -757,6 +777,17 @@ const sendMemoryEnhancedMessage = async (req, res) => {
         logger_1.logger.info(`Session saved successfully - all ${session.messages.length} messages preserved in database (truncation only applied to AI context)`);
         // Generate personalized suggestions
         const personalizedSuggestions = await generatePersonalizedSuggestions(memoryData, message, aiMessage);
+        // Track engagement signal asynchronously (don't block response)
+        const sessionDuration = session.endTime && session.startTime
+            ? (new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000 / 60
+            : 0;
+        (0, personalizationBuilder_1.trackEngagementSignal)(userId, {
+            sessionLength: sessionDuration || 5, // Estimate if unknown
+            messagesCount: session.messages.length,
+            responseReceived: true,
+        }).catch((error) => {
+            logger_1.logger.warn('Failed to track engagement signal:', error.message);
+        });
         res.json({
             success: true,
             response: aiMessage,
@@ -769,6 +800,7 @@ const sendMemoryEnhancedMessage = async (req, res) => {
                 hasMoodData: memoryData.moodPatterns.length > 0,
                 lastUpdated: memoryData.lastUpdated,
             },
+            personalizationVersion: personalizationContext?.version || 1, // Include version for caching
         });
     }
     catch (error) {

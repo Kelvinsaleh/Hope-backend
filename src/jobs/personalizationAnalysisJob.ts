@@ -1,5 +1,5 @@
-import { Types } from "mongoose";
-import { Personalization } from "../models/Personalization";
+import { Types, Document } from "mongoose";
+import { Personalization, IPersonalization } from "../models/Personalization";
 import { ChatSession } from "../models/ChatSession";
 import { ConversationSummary } from "../models/ConversationSummary";
 import { logger } from "../utils/logger";
@@ -24,11 +24,11 @@ export async function analyzeUserPersonalization(userId: string): Promise<void> 
   try {
     const personalization = await Personalization.findOne({
       userId: new Types.ObjectId(userId),
-    }).lean();
+    }).lean() as (Omit<IPersonalization, keyof Document> & { _id: any }) | null;
 
     // Check if analysis is needed
     const now = new Date();
-    const lastAnalysis = personalization?.lastAnalysis ? new Date(personalization.lastAnalysis) : null;
+    const lastAnalysis = personalization?.lastAnalysis ? new Date(personalization.lastAnalysis as Date) : null;
     
     if (lastAnalysis) {
       const daysSinceAnalysis = (now.getTime() - lastAnalysis.getTime()) / (1000 * 60 * 60 * 24);

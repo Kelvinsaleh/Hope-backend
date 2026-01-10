@@ -59,7 +59,7 @@ const allowedOrigins = (() => {
       'https://www.hopementalhealthsupport.xyz',
       // Allow specific Vercel deployment if needed
       process.env.VERCEL_PRODUCTION_URL,
-    ].filter((url): url is string => Boolean(url) && url.startsWith('https://'));
+    ].filter((url): url is string => Boolean(url) && typeof url === 'string' && url.startsWith('https://'));
     
     // Remove duplicates
     return [...new Set(origins)];

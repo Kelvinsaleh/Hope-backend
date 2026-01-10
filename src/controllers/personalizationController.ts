@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
-import { Types } from "mongoose";
-import { Personalization, IPersonalization } from "../models/Personalization";
-import { ConversationSummary } from "../models/ConversationSummary";
+import { Types, Document } from "mongoose";
+import { Personalization, IPersonalization, IAdaptationRule, IBehavioralTendency } from "../models/Personalization";
+import { ConversationSummary, IConversationSummary } from "../models/ConversationSummary";
 import { logger } from "../utils/logger";
 import { buildPersonalizationContext } from "../services/personalization/personalizationBuilder";
 import { analyzeUserPatterns, analyzeTimePatterns, updatePersonalizationFromPatterns } from "../services/personalization/patternAnalysis";
@@ -25,7 +25,7 @@ export const getPersonalization = async (req: Request, res: Response): Promise<v
 
     let personalization = await Personalization.findOne({
       userId: new Types.ObjectId(userId),
-    }).lean();
+    }).lean() as (Omit<IPersonalization, keyof Document> & { _id: any }) | null;
 
     // If no personalization exists, create a default one
     if (!personalization) {
@@ -70,11 +70,17 @@ export const getPersonalization = async (req: Request, res: Response): Promise<v
       });
 
       await defaultPersonalization.save();
-      personalization = defaultPersonalization.toObject();
+      personalization = defaultPersonalization.toObject() as Omit<IPersonalization, keyof Document> & { _id: any };
     }
 
     // Build context for response (includes summaries)
     const context = await buildPersonalizationContext(userId, true);
+
+    // Type guard: ensure personalization is not null
+    if (!personalization) {
+      res.status(404).json({ success: false, error: "Personalization not found" });
+      return;
+    }
 
     res.json({
       success: true,
@@ -83,15 +89,15 @@ export const getPersonalization = async (req: Request, res: Response): Promise<v
         communication: {
           ...personalization.communication,
           // Use user overrides if available
-          style: personalization.userOverrides?.communicationStyle || personalization.communication.style,
-          verbosity: personalization.userOverrides?.verbosity || personalization.communication.verbosity,
+          style: (personalization.userOverrides as any)?.communicationStyle || personalization.communication?.style || "gentle",
+          verbosity: (personalization.userOverrides as any)?.verbosity || personalization.communication?.verbosity || "moderate",
           topicsToAvoid: [
-            ...(personalization.userOverrides?.topicsToAvoid || []),
-            ...(personalization.communication.topicsToAvoid || []),
+            ...((personalization.userOverrides as any)?.topicsToAvoid || []),
+            ...(personalization.communication?.topicsToAvoid || []),
           ],
           preferredTopics: [
-            ...(personalization.userOverrides?.preferredTopics || []),
-            ...(personalization.communication.preferredTopics || []),
+            ...((personalization.userOverrides as any)?.preferredTopics || []),
+            ...(personalization.communication?.preferredTopics || []),
           ],
         },
         behavioralTendencies: personalization.behavioralTendencies || [],
@@ -268,7 +274,7 @@ export const resetPersonalization = async (req: Request, res: Response): Promise
       // Reset everything except user overrides
       personalization.behavioralTendencies = [];
       personalization.adaptationRules = personalization.adaptationRules.filter(
-        r => r.source === "user_explicit"
+        (r: IAdaptationRule) => r.source === "user_explicit"
       );
       personalization.communication.inferredStyle = undefined;
       personalization.communication.preferredTopics = [];
@@ -284,25 +290,25 @@ export const resetPersonalization = async (req: Request, res: Response): Promise
       // Reset only inferred patterns, keep user overrides
       personalization.behavioralTendencies = [];
       personalization.adaptationRules = personalization.adaptationRules.filter(
-        r => r.source === "user_explicit"
+        (r: IAdaptationRule) => r.source === "user_explicit"
       );
       personalization.communication.inferredStyle = undefined;
       personalization.communication.preferredTopics = personalization.communication.preferredTopics.filter(
-        t => personalization.userOverrides?.preferredTopics?.includes(t)
+        (t: string) => (personalization.userOverrides as any)?.preferredTopics?.includes(t)
       );
       personalization.communication.topicsToAvoid = personalization.communication.topicsToAvoid.filter(
-        t => personalization.userOverrides?.topicsToAvoid?.includes(t)
+        (t: string) => (personalization.userOverrides as any)?.topicsToAvoid?.includes(t)
       );
     } else if (resetType === "communication") {
       // Reset only communication preferences
       personalization.communication.inferredStyle = undefined;
-      personalization.communication.verbosity = personalization.userOverrides?.verbosity || "moderate";
-      personalization.userOverrides.communicationStyle = undefined;
+      personalization.communication.verbosity = (personalization.userOverrides as any)?.verbosity || "moderate";
+      (personalization.userOverrides as any).communicationStyle = undefined;
     } else if (resetType === "behavioral") {
       // Reset only behavioral patterns
       personalization.behavioralTendencies = [];
       personalization.adaptationRules = personalization.adaptationRules.filter(
-        r => r.source === "user_explicit"
+        (r: IAdaptationRule) => r.source === "user_explicit"
       );
     }
 
@@ -339,7 +345,7 @@ export const getExplainability = async (req: Request, res: Response): Promise<vo
 
     const personalization = await Personalization.findOne({
       userId: new Types.ObjectId(userId),
-    }).lean();
+    }).lean() as (Omit<IPersonalization, keyof Document> & { _id: any }) | null;
 
     if (!personalization) {
       res.status(404).json({ success: false, error: "Personalization not found" });
@@ -353,19 +359,19 @@ export const getExplainability = async (req: Request, res: Response): Promise<vo
       lastExplained: personalization.explainability?.lastExplained || new Date(),
       communication: {
         style: {
-          value: personalization.userOverrides?.communicationStyle || personalization.communication?.style || "gentle",
-          source: personalization.userOverrides?.communicationStyle ? "user_explicit" : "system_default",
+          value: (personalization.userOverrides as any)?.communicationStyle || personalization.communication?.style || "gentle",
+          source: (personalization.userOverrides as any)?.communicationStyle ? "user_explicit" : "system_default",
           inferred: personalization.communication?.inferredStyle,
         },
         verbosity: {
-          value: personalization.userOverrides?.verbosity || personalization.communication?.verbosity || "moderate",
-          source: personalization.userOverrides?.verbosity ? "user_explicit" : "system_default",
+          value: (personalization.userOverrides as any)?.verbosity || personalization.communication?.verbosity || "moderate",
+          source: (personalization.userOverrides as any)?.verbosity ? "user_explicit" : "system_default",
         },
       },
       behavioralTendencies: (personalization.behavioralTendencies || [])
-        .filter(t => t.confidence > 0.5)
+        .filter((t: any) => t.confidence > 0.5)
         .slice(0, 10)
-        .map(t => ({
+        .map((t: any) => ({
           pattern: t.pattern,
           confidence: t.confidence,
           frequency: t.frequency,

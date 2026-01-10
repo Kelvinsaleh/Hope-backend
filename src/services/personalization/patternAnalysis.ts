@@ -513,7 +513,7 @@ export async function updatePersonalizationFromPatterns(
     // Update behavioral tendencies
     for (const pattern of patterns) {
       const existing = personalization.behavioralTendencies.find(
-        t => t.pattern === pattern.evidence.join("; ")
+        (t: any) => t.pattern === pattern.evidence.join("; ")
       );
 
       if (existing) {
@@ -536,7 +536,7 @@ export async function updatePersonalizationFromPatterns(
     }
 
     // Limit behavioral tendencies to most confident ones
-    personalization.behavioralTendencies.sort((a, b) => b.confidence - a.confidence);
+    personalization.behavioralTendencies.sort((a: any, b: any) => b.confidence - a.confidence);
     personalization.behavioralTendencies = personalization.behavioralTendencies.slice(0, 20);
 
     // Update data quality based on sample sizes

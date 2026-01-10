@@ -104,9 +104,9 @@ export async function buildPersonalizationContext(
         },
       },
       behavioralTendencies: (decayedPersonalization.behavioralTendencies || [])
-        .filter(t => t.confidence > 0.5) // Only include confident patterns
+        .filter((t: any) => t.confidence > 0.5) // Only include confident patterns
         .slice(0, 10) // Top 10
-        .map(t => ({
+        .map((t: any) => ({
           pattern: t.pattern,
           confidence: t.confidence,
         })),
@@ -115,10 +115,10 @@ export async function buildPersonalizationContext(
         preferredDays: decayedPersonalization.timePatterns?.dayOfWeek || [],
       },
       adaptationRules: (decayedPersonalization.adaptationRules || [])
-        .filter(r => r.confidence > 0.4) // Filter low-confidence rules
-        .sort((a, b) => b.priority - a.priority) // Sort by priority
+        .filter((r: any) => r.confidence > 0.4) // Filter low-confidence rules
+        .sort((a: any, b: any) => b.priority - a.priority) // Sort by priority
         .slice(0, 20) // Top 20 rules
-        .map(r => ({
+        .map((r: any) => ({
           ruleType: r.ruleType,
           condition: r.condition,
           action: r.action,

@@ -53,6 +53,7 @@ const CommunityPostSchema = new mongoose_1.Schema({
     mood: { type: String },
     isAnonymous: { type: Boolean, default: false },
     images: [{ type: String }], // Array of image URLs
+    videos: [{ type: String }], // Array of video URLs (max 1, 60 seconds)
     reactions: {
         heart: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }],
         support: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }],
