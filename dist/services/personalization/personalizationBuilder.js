@@ -13,6 +13,11 @@ const conversationSummarization_1 = require("./conversationSummarization");
  */
 async function buildPersonalizationContext(userId, includeSummaries = true) {
     try {
+        // Validate userId before using it
+        if (!userId || userId.trim() === '' || !mongoose_1.Types.ObjectId.isValid(userId)) {
+            logger_1.logger.warn(`Invalid userId provided to buildPersonalizationContext: ${userId}`);
+            return null;
+        }
         const personalization = await Personalization_1.Personalization.findOne({
             userId: new mongoose_1.Types.ObjectId(userId),
             personalizationEnabled: true, // Only include if enabled

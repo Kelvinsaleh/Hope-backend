@@ -351,7 +351,26 @@ async function streamAIResponse(req, res, prompt, sessionId, userId, userMessage
 }
 const sendMemoryEnhancedMessage = async (req, res) => {
     try {
-        const { message, sessionId, userId, context, suggestions, userMemory, memoryVersion } = req.body;
+        const { message, sessionId, context, suggestions, userMemory, memoryVersion } = req.body;
+        // Extract userId from JWT token (req.user is set by authenticateToken middleware)
+        // Fallback to request body only if req.user is not available (shouldn't happen with auth middleware)
+        const userId = req.user?._id?.toString() || req.body?.userId;
+        if (!userId || userId.trim() === '') {
+            logger_1.logger.error('No userId found in request - authentication may have failed');
+            return res.status(401).json({
+                error: "User authentication required",
+                message: "Please log in to send messages"
+            });
+        }
+        // Validate userId is a valid ObjectId format
+        if (!mongoose_1.Types.ObjectId.isValid(userId)) {
+            logger_1.logger.error(`Invalid userId format: ${userId}`);
+            return res.status(400).json({
+                error: "Invalid user ID format",
+                message: "Please log in again"
+            });
+        }
+        const userIdObj = new mongoose_1.Types.ObjectId(userId);
         logger_1.logger.info(`Processing memory-enhanced message from user ${userId}`);
         if (!message) {
             return res.status(400).json({ error: "Message is required" });
@@ -365,9 +384,10 @@ const sendMemoryEnhancedMessage = async (req, res) => {
                 fallbackResponse: "Take a moment to breathe. I'll be ready when you are."
             });
         }
-        // Get user data
-        const user = await User_1.User.findById(userId);
+        // Get user data - use req.user if available (already loaded by auth middleware), otherwise fetch
+        const user = req.user || await User_1.User.findById(userIdObj);
         if (!user) {
+            logger_1.logger.error(`User not found: ${userId}`);
             return res.status(404).json({ error: "User not found" });
         }
         // Get or create chat session
@@ -377,7 +397,7 @@ const sendMemoryEnhancedMessage = async (req, res) => {
             // Create new session if it doesn't exist
             session = new ChatSession_1.ChatSession({
                 sessionId,
-                userId: new mongoose_1.Types.ObjectId(userId),
+                userId: userIdObj, // Use validated ObjectId
                 startTime: new Date(),
                 status: "active",
                 messages: [],
@@ -499,7 +519,7 @@ const sendMemoryEnhancedMessage = async (req, res) => {
             try {
                 const ids = recentJournalIds.map(id => mongoose_1.Types.ObjectId.isValid(id) ? new mongoose_1.Types.ObjectId(id) : null).filter(Boolean);
                 if (ids.length > 0) {
-                    const entries = await JournalEntry_1.JournalEntry.find({ _id: { $in: ids }, userId }).lean();
+                    const entries = await JournalEntry_1.JournalEntry.find({ _id: { $in: ids }, userId: userIdObj }).lean();
                     // Replace memoryData.journalEntries/recentJournals with fetched entries (serialized)
                     memoryData.journalEntries = entries;
                     memoryData.recentJournals = entries.map(e => ({
@@ -523,6 +543,7 @@ const sendMemoryEnhancedMessage = async (req, res) => {
         // PERSONALIZATION INTEGRATION
         // ============================================================================
         // Fetch personalization context (includes user preferences, behavioral patterns, summaries)
+        // userId is validated above and is a valid ObjectId string at this point
         const personalizationContext = await (0, personalizationBuilder_1.buildPersonalizationContext)(userId, true);
         // Build enforcement rules (mandatory system instructions)
         const enforcementRules = (0, personalizationBuilder_1.buildEnforcementRules)(personalizationContext);
@@ -641,7 +662,7 @@ const sendMemoryEnhancedMessage = async (req, res) => {
         // PRIORITY 2: Persistent memory - key facts from LongTermMemory
         try {
             const persistentMemories = await LongTermMemory_1.LongTermMemoryModel.find({
-                userId: new mongoose_1.Types.ObjectId(userId),
+                userId: userIdObj, // Use validated ObjectId
             })
                 .sort({ importance: -1, timestamp: -1 })
                 .limit(15) // Top 15 most important facts
@@ -681,7 +702,7 @@ const sendMemoryEnhancedMessage = async (req, res) => {
                 try {
                     const previousSessionsWithMessages = await ChatSession_1.ChatSession.find({
                         sessionId: { $in: previousSessionIds },
-                        userId: new mongoose_1.Types.ObjectId(userId)
+                        userId: userIdObj // Use validated ObjectId
                     })
                         .select('sessionId startTime messages')
                         .lean()
@@ -739,6 +760,7 @@ const sendMemoryEnhancedMessage = async (req, res) => {
         const shouldStream = req.query?.stream === 'true' || req.headers.accept?.includes('text/event-stream');
         if (shouldStream) {
             // Stream response for better perceived latency
+            // userId is validated and valid at this point
             return streamAIResponse(req, res, hopePrompt, sessionId, userId, message, session);
         }
         logger_1.logger.info(`Requesting AI response through queue system...`);
@@ -873,31 +895,37 @@ async function storeKeyFacts(userId, facts) {
 }
 async function gatherUserMemory(userId) {
     try {
+        // Validate and convert userId to ObjectId
+        if (!userId || userId.trim() === '' || !mongoose_1.Types.ObjectId.isValid(userId)) {
+            logger_1.logger.error(`Invalid userId provided to gatherUserMemory: ${userId}`);
+            throw new Error(`Invalid userId: ${userId}`);
+        }
+        const userIdObj = new mongoose_1.Types.ObjectId(userId);
         // Get recent journal entries
-        const journalEntries = await JournalEntry_1.JournalEntry.find({ userId })
+        const journalEntries = await JournalEntry_1.JournalEntry.find({ userId: userIdObj })
             .sort({ createdAt: -1 })
             .limit(10)
             .lean();
         // Get recent mood data
-        const moodPatterns = await Mood_1.Mood.find({ userId })
+        const moodPatterns = await Mood_1.Mood.find({ userId: userIdObj })
             .sort({ createdAt: -1 })
             .limit(30)
             .lean();
         // Get meditation history
-        const meditationHistory = await Meditation_1.MeditationSession.find({ userId })
+        const meditationHistory = await Meditation_1.MeditationSession.find({ userId: userIdObj })
             .populate('meditationId')
             .sort({ completedAt: -1 })
             .limit(10)
             .lean();
         // Get therapy sessions
-        const therapySessions = await ChatSession_1.ChatSession.find({ userId })
+        const therapySessions = await ChatSession_1.ChatSession.find({ userId: userIdObj })
             .sort({ startTime: -1 })
             .limit(5)
             .lean();
         // Fetch actual user profile from database
         let userProfile = null;
         try {
-            userProfile = await UserProfile_1.UserProfile.findOne({ userId: new mongoose_1.Types.ObjectId(userId) }).lean();
+            userProfile = await UserProfile_1.UserProfile.findOne({ userId: userIdObj }).lean();
         }
         catch (profileError) {
             logger_1.logger.warn("Failed to fetch user profile for memory:", profileError);

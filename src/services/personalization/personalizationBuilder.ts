@@ -62,6 +62,12 @@ export async function buildPersonalizationContext(
   includeSummaries: boolean = true
 ): Promise<PersonalizationContext | null> {
   try {
+    // Validate userId before using it
+    if (!userId || userId.trim() === '' || !Types.ObjectId.isValid(userId)) {
+      logger.warn(`Invalid userId provided to buildPersonalizationContext: ${userId}`);
+      return null;
+    }
+    
     const personalization = await Personalization.findOne({
       userId: new Types.ObjectId(userId),
       personalizationEnabled: true, // Only include if enabled

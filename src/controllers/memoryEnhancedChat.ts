@@ -445,8 +445,30 @@ async function streamAIResponse(
 
 export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => {
   try {
-    const { message, sessionId, userId, context, suggestions, userMemory, memoryVersion } = req.body;
+    const { message, sessionId, context, suggestions, userMemory, memoryVersion } = req.body;
 
+    // Extract userId from JWT token (req.user is set by authenticateToken middleware)
+    // Fallback to request body only if req.user is not available (shouldn't happen with auth middleware)
+    const userId = req.user?._id?.toString() || req.body?.userId;
+    
+    if (!userId || userId.trim() === '') {
+      logger.error('No userId found in request - authentication may have failed');
+      return res.status(401).json({ 
+        error: "User authentication required",
+        message: "Please log in to send messages"
+      });
+    }
+
+    // Validate userId is a valid ObjectId format
+    if (!Types.ObjectId.isValid(userId)) {
+      logger.error(`Invalid userId format: ${userId}`);
+      return res.status(400).json({ 
+        error: "Invalid user ID format",
+        message: "Please log in again"
+      });
+    }
+
+    const userIdObj = new Types.ObjectId(userId);
     logger.info(`Processing memory-enhanced message from user ${userId}`);
 
     if (!message) {
@@ -463,9 +485,10 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
       });
     }
 
-    // Get user data
-    const user = await User.findById(userId);
+    // Get user data - use req.user if available (already loaded by auth middleware), otherwise fetch
+    const user = req.user || await User.findById(userIdObj);
     if (!user) {
+      logger.error(`User not found: ${userId}`);
       return res.status(404).json({ error: "User not found" });
     }
 
@@ -476,7 +499,7 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
       // Create new session if it doesn't exist
       session = new ChatSession({
         sessionId,
-        userId: new Types.ObjectId(userId),
+        userId: userIdObj, // Use validated ObjectId
         startTime: new Date(),
         status: "active",
         messages: [],
@@ -598,7 +621,7 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
       try {
         const ids = recentJournalIds.map(id => Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : null).filter(Boolean);
         if (ids.length > 0) {
-          const entries = await JournalEntry.find({ _id: { $in: ids }, userId }).lean();
+          const entries = await JournalEntry.find({ _id: { $in: ids }, userId: userIdObj }).lean();
           // Replace memoryData.journalEntries/recentJournals with fetched entries (serialized)
           memoryData.journalEntries = entries;
           memoryData.recentJournals = entries.map(e => ({
@@ -623,6 +646,7 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
     // PERSONALIZATION INTEGRATION
     // ============================================================================
     // Fetch personalization context (includes user preferences, behavioral patterns, summaries)
+    // userId is validated above and is a valid ObjectId string at this point
     const personalizationContext = await buildPersonalizationContext(userId, true);
     
     // Build enforcement rules (mandatory system instructions)
@@ -760,7 +784,7 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
     // PRIORITY 2: Persistent memory - key facts from LongTermMemory
     try {
       const persistentMemories = await LongTermMemoryModel.find({
-        userId: new Types.ObjectId(userId),
+        userId: userIdObj, // Use validated ObjectId
       })
         .sort({ importance: -1, timestamp: -1 })
         .limit(15) // Top 15 most important facts
@@ -805,7 +829,7 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
         try {
           const previousSessionsWithMessages = await ChatSession.find({
             sessionId: { $in: previousSessionIds },
-            userId: new Types.ObjectId(userId)
+            userId: userIdObj // Use validated ObjectId
           })
             .select('sessionId startTime messages')
             .lean()
@@ -825,7 +849,7 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
                 
                 const sessionMessages = prevRecent
                   .map((msg: any) => `${msg.role === 'user' ? 'User' : 'Hope'}: ${msg.content}`)
-                  .join('\n');
+      .join('\n');
                 const sessionDate = prevSession.startTime 
                   ? new Date(prevSession.startTime).toLocaleDateString()
                   : 'Previous session';
@@ -875,6 +899,7 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
     
     if (shouldStream) {
       // Stream response for better perceived latency
+      // userId is validated and valid at this point
       return streamAIResponse(req, res, hopePrompt, sessionId, userId, message, session);
     }
     
@@ -1034,27 +1059,35 @@ async function storeKeyFacts(
 
 async function gatherUserMemory(userId: string): Promise<UserMemory> {
   try {
+    // Validate and convert userId to ObjectId
+    if (!userId || userId.trim() === '' || !Types.ObjectId.isValid(userId)) {
+      logger.error(`Invalid userId provided to gatherUserMemory: ${userId}`);
+      throw new Error(`Invalid userId: ${userId}`);
+    }
+    
+    const userIdObj = new Types.ObjectId(userId);
+    
     // Get recent journal entries
-    const journalEntries = await JournalEntry.find({ userId })
+    const journalEntries = await JournalEntry.find({ userId: userIdObj })
       .sort({ createdAt: -1 })
       .limit(10)
       .lean();
 
     // Get recent mood data
-    const moodPatterns = await Mood.find({ userId })
+    const moodPatterns = await Mood.find({ userId: userIdObj })
       .sort({ createdAt: -1 })
       .limit(30)
       .lean();
 
     // Get meditation history
-    const meditationHistory = await MeditationSession.find({ userId })
+    const meditationHistory = await MeditationSession.find({ userId: userIdObj })
       .populate('meditationId')
       .sort({ completedAt: -1 })
       .limit(10)
       .lean();
 
     // Get therapy sessions
-    const therapySessions = await ChatSession.find({ userId })
+    const therapySessions = await ChatSession.find({ userId: userIdObj })
       .sort({ startTime: -1 })
       .limit(5)
       .lean();
@@ -1062,7 +1095,7 @@ async function gatherUserMemory(userId: string): Promise<UserMemory> {
     // Fetch actual user profile from database
     let userProfile: any = null;
     try {
-      userProfile = await UserProfile.findOne({ userId: new Types.ObjectId(userId) }).lean();
+      userProfile = await UserProfile.findOne({ userId: userIdObj }).lean();
     } catch (profileError) {
       logger.warn("Failed to fetch user profile for memory:", profileError);
     }
@@ -1074,7 +1107,7 @@ async function gatherUserMemory(userId: string): Promise<UserMemory> {
       goals: userProfile?.goals || [],
       challenges: userProfile?.challenges || [],
       interests: userProfile?.interests || [],
-      preferences: {
+        preferences: {
         communicationStyle: userProfile?.communicationStyle || 'gentle',
         topicsToAvoid: [], // Can be populated if stored in profile
         preferredTechniques: [], // Can be populated if stored in profile

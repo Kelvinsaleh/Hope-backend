@@ -160,15 +160,9 @@ const createPost = async (req, res) => {
                 error: 'Invalid spaceId format'
             });
         }
-        // Check premium access for posting
+        // Post creation is free for all users
+        // AI reflection generation is premium-only (checked later)
         const hasPremium = await isPremiumUser(userId);
-        if (!hasPremium) {
-            return res.status(403).json({
-                success: false,
-                error: 'Premium subscription required to create posts',
-                upgradeRequired: true
-            });
-        }
         // Validate content length: max 2000 words
         const wordCount = (content || '')
             .trim()
@@ -259,18 +253,30 @@ const reactToPost = async (req, res) => {
                 error: 'Post not found'
             });
         }
-        // Toggle reaction
+        // Check if user has already reacted with this reaction type
         const reactionArray = post.reactions[reactionType];
-        const hasReacted = reactionArray.includes(userId);
-        if (hasReacted) {
-            // Remove reaction
-            post.reactions[reactionType] =
-                reactionArray.filter(id => !id.equals(userId));
+        const hasReactedSameType = reactionArray.some((id) => id.equals(userId));
+        // Remove user from ALL reaction types first (single engagement rule)
+        const allReactionTypes = ['heart', 'support', 'growth'];
+        let hadPreviousReaction = false;
+        for (const type of allReactionTypes) {
+            const typeArray = post.reactions[type];
+            const hadReaction = typeArray.some((id) => id.equals(userId));
+            if (hadReaction) {
+                hadPreviousReaction = true;
+            }
+            post.reactions[type] = typeArray.filter((id) => !id.equals(userId));
         }
-        else {
-            // Add reaction
+        // If user wasn't already reacted with the selected type, add them
+        // If they were, we've already removed it above (toggle off)
+        let shouldCreateNotification = false;
+        if (!hasReactedSameType) {
             post.reactions[reactionType].push(userId);
-            // Create notification for post owner (if not self-reaction)
+            shouldCreateNotification = true;
+        }
+        await post.save();
+        // Create notification for post owner (if not self-reaction and adding reaction)
+        if (shouldCreateNotification) {
             const postOwnerId = post.userId;
             if (postOwnerId && !postOwnerId._id.equals(userId)) {
                 const { createNotification } = await Promise.resolve().then(() => __importStar(require('./notificationController')));
@@ -282,11 +288,10 @@ const reactToPost = async (req, res) => {
                 });
             }
         }
-        await post.save();
         res.json({
             success: true,
             reactions: post.reactions,
-            message: hasReacted ? 'Reaction removed' : 'Reaction added'
+            message: hasReactedSameType ? 'Reaction removed' : 'Reaction added'
         });
     }
     catch (error) {
