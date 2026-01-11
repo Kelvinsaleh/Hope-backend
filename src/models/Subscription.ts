@@ -34,7 +34,7 @@ const SubscriptionSchema = new Schema<ISubscription>(
     planId: { 
       type: String, 
       required: true,
-      enum: ['monthly', 'annually']
+      enum: ['monthly', 'annually', 'trial']
     },
     planName: { type: String, required: true },
     amount: { type: Number, required: true }, // Amount in base currency (USD)
