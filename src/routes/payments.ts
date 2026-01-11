@@ -1,6 +1,6 @@
 import express from "express";
 import { initializePayment, verifyPayment, handleWebhook, createPaystackSubscription } from "../controllers/paymentController";
-import { getSubscriptionStatus, updateUserTier, createSubscription, cancelSubscription } from "../controllers/subscriptionController";
+import { getSubscriptionStatus, updateUserTier, createSubscription, cancelSubscription, startFreeTrial } from "../controllers/subscriptionController";
 import { authenticateToken } from "../middleware/auth";
 
 const router = express.Router();
@@ -16,6 +16,7 @@ router.post("/webhook", express.raw({ type: 'application/json' }), handleWebhook
 
 // Subscription status (requires auth)
 router.get("/subscription/status", authenticateToken, getSubscriptionStatus);
+router.post("/subscription/start-trial", authenticateToken, startFreeTrial);
 
 // Create a subscription record (frontend may call this after initialization)
 router.post("/subscription", authenticateToken, createSubscription);

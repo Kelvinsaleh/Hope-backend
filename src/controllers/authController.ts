@@ -351,15 +351,39 @@ export const logout = async (req: Request, res: Response) => {
 // Add me endpoint
 export const me = async (req: Request, res: Response) => {
   try {
+    const user = await User.findById(req.user._id).lean();
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const trialEndsAt = user.trialEndsAt ? new Date(user.trialEndsAt).toISOString() : null;
+    const trialStartedAt = (user as any)?.trialStartedAt ? new Date((user as any).trialStartedAt).toISOString() : null;
+    const trialIsActive = trialEndsAt ? new Date(trialEndsAt) > new Date() : false;
+    const derivedTier = trialIsActive ? 'premium' : (user.subscription?.tier || 'free');
+
+    const responseUser = {
+      _id: user._id,
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      tier: derivedTier,
+      subscription: user.subscription,
+      trialEndsAt,
+      trialStartedAt,
+    };
+
     res.json({ 
       success: true,
-      user: {
-        _id: req.user._id,
-        id: req.user._id,
-        name: req.user.name,
-        email: req.user.email,
-        createdAt: req.user.createdAt,
-        updatedAt: req.user.updatedAt,
+      ...responseUser,
+      user: responseUser,
+      trial: {
+        isActive: trialIsActive,
+        trialStart: trialStartedAt,
+        trialStartedAt,
+        trialEndsAt,
+        plan: user.subscription?.planId || 'trial'
       }
     });
   } catch (error) {

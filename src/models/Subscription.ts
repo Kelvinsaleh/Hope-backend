@@ -6,10 +6,14 @@ export interface ISubscription extends Document {
   planName: string;
   amount: number;
   currency: string;
-  status: 'pending' | 'active' | 'cancelled' | 'expired';
+  status: 'pending' | 'active' | 'cancelled' | 'expired' | 'trialing';
   startDate?: Date;
   expiresAt?: Date;
   activatedAt?: Date;
+  trialStartsAt?: Date;
+  trialEndsAt?: Date;
+  cancelledAt?: Date;
+  autoRenew?: boolean;
   paystackReference?: string;
   paystackAccessCode?: string;
   paystackTransactionId?: string;
@@ -38,13 +42,17 @@ const SubscriptionSchema = new Schema<ISubscription>(
     status: { 
       type: String, 
       required: true,
-      enum: ['pending', 'active', 'cancelled', 'expired'],
+      enum: ['pending', 'active', 'cancelled', 'expired', 'trialing'],
       default: 'pending',
       index: true
     },
     startDate: { type: Date },
     expiresAt: { type: Date, index: true },
     activatedAt: { type: Date },
+    trialStartsAt: { type: Date },
+    trialEndsAt: { type: Date, index: true },
+    cancelledAt: { type: Date },
+    autoRenew: { type: Boolean, default: true },
     paystackReference: { type: String, index: true },
     paystackAccessCode: { type: String },
     paystackTransactionId: { type: String },

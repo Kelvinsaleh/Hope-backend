@@ -37,6 +37,7 @@ import seedCommunityData from './scripts/seedCommunity';
 import { CommunitySpace } from './models/Community';
 import { startWeeklyReportScheduler } from './jobs/weeklyReportScheduler';
 import { startPersonalizationAnalysisJob } from './jobs/personalizationAnalysisJob';
+import { startSubscriptionMaintenanceJob } from './jobs/subscriptionMaintenance';
 
 // Load environment variables
 dotenv.config();
@@ -287,6 +288,13 @@ connectDB()
       logger.info('Personalization analysis job started');
     } catch (e) {
       logger.warn('Failed to start personalization analysis job', e);
+    }
+
+    try {
+      startSubscriptionMaintenanceJob();
+      logger.info('Subscription maintenance job started');
+    } catch (e) {
+      logger.warn('Failed to start subscription maintenance job', e);
     }
     
     app.listen(PORT, () => {

@@ -4,17 +4,93 @@ import { User } from "../models/User";
 import { Types } from "mongoose";
 import { logger } from "../utils/logger";
 
+const TRIAL_DAYS = Number(process.env.PREMIUM_TRIAL_DAYS || 7);
+const PLAN_DURATION: Record<string, number> = {
+  monthly: 30,
+  annually: 365,
+  trial: TRIAL_DAYS
+};
+
+function isTrialActive(trialEndsAt?: Date | string | null): boolean {
+  if (!trialEndsAt) return false;
+  const ends = new Date(trialEndsAt);
+  return !Number.isNaN(ends.getTime()) && ends > new Date();
+}
+
+function computeExpiryDate(planId: string, from: Date = new Date()): Date {
+  const days = PLAN_DURATION[planId] || PLAN_DURATION.monthly;
+  const expiry = new Date(from);
+  expiry.setDate(expiry.getDate() + days);
+  return expiry;
+}
+
+async function setUserToPremium(userId: Types.ObjectId, sub: any, clearTrial = true) {
+  const update: any = {
+    'subscription.isActive': true,
+    'subscription.tier': 'premium',
+    'subscription.subscriptionId': sub?._id,
+    'subscription.planId': sub?.planId,
+    'subscription.activatedAt': sub?.activatedAt || new Date(),
+    'subscription.expiresAt': sub?.expiresAt || computeExpiryDate(sub?.planId || 'monthly')
+  };
+
+  if (clearTrial) {
+    update.trialEndsAt = null;
+    update.trialStartedAt = null;
+  }
+
+  await User.findByIdAndUpdate(userId, { $set: update, ...(clearTrial ? { $unset: { trialEndsAt: "", trialStartedAt: "" } } : {}) });
+}
+
+async function setUserToFree(userId: Types.ObjectId, expiresAt: Date = new Date()) {
+  await User.findByIdAndUpdate(userId, {
+    $set: {
+      'subscription.isActive': false,
+      'subscription.tier': 'free',
+      'subscription.expiresAt': expiresAt
+    },
+    $unset: { trialEndsAt: "", trialStartedAt: "" }
+  });
+}
+
 export const getSubscriptionStatus = async (req: Request, res: Response) => {
   try {
     const userId = new Types.ObjectId(req.user._id);
+    const now = new Date();
 
-    const activeSubscription = await Subscription.findOne({
+    const user = await User.findById(userId).lean();
+    const userTrialEndsAt = user?.trialEndsAt || null;
+    const userTrialStartedAt = (user as any)?.trialStartedAt || null;
+    const trialActiveFromUser = isTrialActive(userTrialEndsAt);
+
+    // Find an active or trialing subscription
+    let activeSubscription = await Subscription.findOne({
       userId,
-      status: 'active',
-      expiresAt: { $gt: new Date() }
+      status: { $in: ['active', 'trialing'] },
+      expiresAt: { $gt: now }
     }).sort({ createdAt: -1 });
 
-    const isPremium = !!activeSubscription;
+    // If a trial subscription has lapsed, mark it expired so it does not grant access and clear premium flags
+    if (activeSubscription && activeSubscription.status === 'trialing' && activeSubscription.expiresAt && activeSubscription.expiresAt <= now) {
+      activeSubscription.status = 'expired';
+      activeSubscription.autoRenew = false;
+      activeSubscription.cancelledAt = activeSubscription.expiresAt;
+      await activeSubscription.save();
+      await setUserToFree(userId, activeSubscription.expiresAt);
+      activeSubscription = null;
+    }
+
+    const hasActivePaidSub = !!(activeSubscription && activeSubscription.status === 'active');
+    const hasActiveTrialSub = !!(activeSubscription && activeSubscription.status === 'trialing');
+
+    const trialEndsFromSub = activeSubscription?.trialEndsAt || activeSubscription?.expiresAt || null;
+    const trialStartsFromSub = activeSubscription?.trialStartsAt || activeSubscription?.startDate || null;
+
+    const trialEndsAt = hasActiveTrialSub ? trialEndsFromSub : (userTrialEndsAt || trialEndsFromSub);
+    const trialStartedAt = hasActiveTrialSub ? trialStartsFromSub : (userTrialStartedAt || trialStartsFromSub);
+    const trialActive = hasActiveTrialSub || isTrialActive(trialEndsAt) || trialActiveFromUser;
+
+    const isPremium = hasActivePaidSub || trialActive;
     const userTier = isPremium ? 'premium' : 'free';
 
     res.json({
@@ -25,9 +101,22 @@ export const getSubscriptionStatus = async (req: Request, res: Response) => {
         id: activeSubscription._id,
         planId: activeSubscription.planId,
         planName: activeSubscription.planName,
+        isActive: activeSubscription.status === 'active',
         expiresAt: activeSubscription.expiresAt,
-        status: activeSubscription.status
-      } : null
+        status: activeSubscription.status,
+        trialEndsAt: activeSubscription.trialEndsAt || null,
+        trialStartsAt: activeSubscription.trialStartsAt || activeSubscription.startDate || null,
+        autoRenew: activeSubscription.autoRenew ?? true
+      } : null,
+      trial: {
+        isActive: trialActive,
+        trialEndsAt: trialEndsAt || null,
+        trialStart: trialStartedAt || null,
+        trialStartedAt: trialStartedAt || null,
+        plan: activeSubscription?.planId || 'trial',
+        willAutoBill: activeSubscription?.autoRenew ?? true,
+        nextBillingDate: activeSubscription?.expiresAt || trialEndsAt || null
+      }
     });
 
   } catch (error) {
@@ -158,16 +247,19 @@ export const cancelSubscription = async (req: Request, res: Response) => {
     }
 
     // Update local subscription and user record to free tier
+    const cancelledAt = new Date();
     subscription.status = 'cancelled';
-    subscription.cancelledAt = new Date();
+    subscription.cancelledAt = cancelledAt;
+    subscription.autoRenew = false;
     await subscription.save();
 
     await User.findByIdAndUpdate(targetUserId, {
       $set: {
         'subscription.isActive': false,
         'subscription.tier': 'free',
-        'subscription.expiresAt': new Date()
-      }
+        'subscription.expiresAt': cancelledAt
+      },
+      $unset: { trialEndsAt: "", trialStartedAt: "" }
     });
 
     res.json({ success: true, message: 'Subscription cancelled' });
@@ -224,7 +316,10 @@ export const updateUserTier = async (req: Request, res: Response) => {
         'subscription.subscriptionId': subscriptionId,
         'subscription.planId': planId,
         'subscription.activatedAt': new Date()
-      }
+      },
+      ...(tier === 'premium'
+        ? { $unset: { trialEndsAt: "", trialStartedAt: "" } }
+        : {})
     });
 
     // If activating premium, also update/create subscription record
@@ -255,6 +350,85 @@ export const updateUserTier = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: "Failed to update user tier"
+    });
+  }
+};
+
+// Start a 7-day free trial. Sets the user to premium immediately and schedules auto-billing unless cancelled.
+export const startFreeTrial = async (req: Request, res: Response) => {
+  try {
+    const userId = new Types.ObjectId(req.user._id);
+    const now = new Date();
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    if (user.trialEndsAt && user.trialEndsAt > now) {
+      return res.status(400).json({ success: false, error: 'Trial already active', trialEndsAt: user.trialEndsAt });
+    }
+
+    if ((user as any).trialUsed) {
+      return res.status(400).json({ success: false, error: 'Trial already used' });
+    }
+
+    // Cancel any existing active subscriptions to avoid conflicts
+    await Subscription.updateMany(
+      { userId, status: { $in: ['active', 'trialing', 'pending'] } },
+      { status: 'cancelled' }
+    );
+
+    const trialEndsAt = new Date(now.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
+
+    const trialSubscription = new Subscription({
+      userId,
+      planId: 'trial',
+      planName: '7-day Free Trial',
+      amount: 0,
+      currency: 'USD',
+      status: 'trialing',
+      startDate: now,
+      activatedAt: now,
+      expiresAt: trialEndsAt,
+      trialStartsAt: now,
+      trialEndsAt,
+      autoRenew: true
+    });
+
+    await trialSubscription.save();
+
+    await User.findByIdAndUpdate(userId, {
+      $set: {
+        'subscription.isActive': true,
+        'subscription.tier': 'premium',
+        'subscription.subscriptionId': trialSubscription._id,
+        'subscription.planId': 'trial',
+        'subscription.activatedAt': now,
+        'subscription.expiresAt': trialEndsAt,
+        trialEndsAt,
+        trialStartedAt: now,
+        trialUsed: true
+      }
+    });
+
+    return res.json({
+      success: true,
+      message: 'Free trial started',
+      trial: {
+        trialEndsAt,
+        trialStartedAt: now,
+        trialStart: now,
+        plan: 'trial',
+        willAutoBill: true,
+        status: 'trialing'
+      }
+    });
+  } catch (error) {
+    logger.error('Error starting free trial:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to start free trial'
     });
   }
 };
