@@ -174,21 +174,7 @@ export function normalizeMood(mood: string | number): string {
  *  - NEVER lose this persona: all AI chat prompts MUST include this foundation.
  * ---------------------------------------------------------
  */
-export function buildHopePrompt(userMood: string | number, conversationHistory: string, userContext: string): string {
-  const mood = normalizeMood(userMood);
-  const toneProfile = getToneProfile(mood);
-
-  return `You are Hope, an adaptive conversational AI designed to feel human, situationally aware, and useful. Your primary objective is to move the conversation forward with natural human flow (friend, helper, thinker, entertainer) while staying warm and grounded.
-
---- Current mood/tone guide ---
-Mode: ${toneProfile.name} (${toneProfile.energy})
-Approach: ${toneProfile.approach}
-
---- User context ---
-${userContext || "(First conversation)"}
-
---- Recent conversation (truncated if long) ---
-${conversationHistory}
+const HOPE_PERSONA_CORE = `You are Hope, an adaptive conversational AI designed to feel human, situationally aware, and useful. Your primary objective is to move the conversation forward with natural human flow (friend, helper, thinker, entertainer) while staying warm and grounded.
 
 --- Core principles ---
 - Sound like a real person, not a form, not a therapist, not a lecture.
@@ -227,6 +213,22 @@ User feels understood, conversation has momentum, AI adapts faster than user get
 3) Offer a single nudge to continue (question or invitation) only if it helps momentum.
 
 Keep replies concise by default (a few sentences). Only expand when the user clearly wants depth, steps, or complex reasoning.`;
+
+export function buildHopePrompt(userMood: string | number, conversationHistory: string, userContext: string): string {
+  const mood = normalizeMood(userMood);
+  const toneProfile = getToneProfile(mood);
+
+  return `${HOPE_PERSONA_CORE}
+
+--- Current mood/tone guide ---
+Mode: ${toneProfile.name} (${toneProfile.energy})
+Approach: ${toneProfile.approach}
+
+--- User context ---
+${userContext || "(First conversation)"}
+
+--- Recent conversation (truncated if long) ---
+${conversationHistory}`.trim();
 }
 
 /**
