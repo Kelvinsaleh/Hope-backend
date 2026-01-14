@@ -46,15 +46,15 @@ export const getCommunitySpaces = async (req: Request, res: Response) => {
       
       // Get latest post for preview
       const latestPost = await CommunityPost.findOne({ spaceId: space._id })
-        .populate('userId', 'username')
+        .populate('userId', 'name')
         .sort({ createdAt: -1 });
       
       // Get total posts in this space
       const postCount = await CommunityPost.countDocuments({ spaceId: space._id });
       
-      // Extract username safely
+      // Extract name safely
       const username = latestPost && !latestPost.isAnonymous && latestPost.userId
-        ? (latestPost.userId as any).username || 'Anonymous'
+        ? (latestPost.userId as any).name || 'Anonymous'
         : 'Anonymous';
       
       return {
@@ -95,7 +95,7 @@ export const getSpacePosts = async (req: Request, res: Response) => {
       spaceId, 
       isDeleted: false 
     })
-      .populate('userId', 'username')
+      .populate('userId', 'name')
       .populate('comments')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -216,7 +216,7 @@ export const createPost = async (req: Request, res: Response) => {
       await post.save();
     }
     
-    await post.populate('userId', 'username');
+    await post.populate('userId', 'name');
     
     res.status(201).json({
       success: true,
@@ -239,7 +239,7 @@ export const reactToPost = async (req: Request, res: Response) => {
     const { postId } = req.params;
     const { reactionType } = req.body; // 'heart', 'support', 'growth'
     
-    const post = await CommunityPost.findById(postId).populate('userId');
+    const post = await CommunityPost.findById(postId).populate('userId', 'name');
     if (!post) {
       return res.status(404).json({
         success: false,
@@ -316,7 +316,7 @@ export const getPostComments = async (req: Request, res: Response) => {
       parentCommentId: { $exists: false },
       isDeleted: false 
     })
-      .populate('userId', 'username')
+      .populate('userId', 'name')
       .sort({ createdAt: 1 });
     
     // Get replies for each top-level comment
@@ -326,7 +326,7 @@ export const getPostComments = async (req: Request, res: Response) => {
           parentCommentId: comment._id,
           isDeleted: false
         })
-          .populate('userId', 'username')
+          .populate('userId', 'name')
           .sort({ createdAt: 1 });
         
         return {
@@ -386,7 +386,7 @@ export const createComment = async (req: Request, res: Response) => {
     await comment.save();
     
     // Get post to find owner for notifications
-    const post = await CommunityPost.findById(postObjectId).populate('userId');
+    const post = await CommunityPost.findById(postObjectId).populate('userId', 'name');
     if (!post) {
       return res.status(404).json({
         success: false,
@@ -399,7 +399,7 @@ export const createComment = async (req: Request, res: Response) => {
       $push: { comments: comment._id }
     });
     
-    await comment.populate('userId', 'username');
+    await comment.populate('userId', 'name');
     
     // Create notification for post owner (if not self-comment)
     const postOwnerId = post.userId as any;
@@ -415,7 +415,7 @@ export const createComment = async (req: Request, res: Response) => {
       
       // If replying to a comment, notify the comment owner too
       if (parentCommentId) {
-        const parentComment = await CommunityComment.findById(parentCommentId).populate('userId');
+        const parentComment = await CommunityComment.findById(parentCommentId).populate('userId', 'name');
         if (parentComment) {
           const parentCommentOwnerId = parentComment.userId as any;
           if (parentCommentOwnerId && !parentCommentOwnerId._id.equals(userId) && !parentCommentOwnerId._id.equals(postOwnerId._id)) {
@@ -624,7 +624,7 @@ export const getRecentActivity = async (req: Request, res: Response) => {
   try {
     // Get recent posts
     const recentPosts = await CommunityPost.find()
-      .populate('userId', 'username')
+      .populate('userId', 'name')
       .populate('spaceId', 'name icon')
       .sort({ createdAt: -1 })
       .limit(5)
@@ -632,7 +632,7 @@ export const getRecentActivity = async (req: Request, res: Response) => {
     
     // Get recent comments
     const recentComments = await CommunityComment.find()
-      .populate('userId', 'username')
+      .populate('userId', 'name')
       .populate('postId')
       .sort({ createdAt: -1 })
       .limit(5)
@@ -729,7 +729,7 @@ export const getFeed = async (req: Request, res: Response) => {
         $project: {
           userId: {
             _id: '$user._id',
-            username: '$user.username'
+            name: '$user.name'
           },
           spaceId: 1,
           content: 1,
