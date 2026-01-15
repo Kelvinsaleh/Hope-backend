@@ -41,6 +41,7 @@ const seedCommunity_1 = __importDefault(require("./scripts/seedCommunity"));
 const Community_1 = require("./models/Community");
 const weeklyReportScheduler_1 = require("./jobs/weeklyReportScheduler");
 const personalizationAnalysisJob_1 = require("./jobs/personalizationAnalysisJob");
+const subscriptionMaintenance_1 = require("./jobs/subscriptionMaintenance");
 // Load environment variables
 dotenv_1.default.config();
 const app = (0, express_1.default)();
@@ -262,6 +263,13 @@ const autoSeedCommunity = async () => {
     }
     catch (e) {
         logger_1.logger.warn('Failed to start personalization analysis job', e);
+    }
+    try {
+        (0, subscriptionMaintenance_1.startSubscriptionMaintenanceJob)();
+        logger_1.logger.info('Subscription maintenance job started');
+    }
+    catch (e) {
+        logger_1.logger.warn('Failed to start subscription maintenance job', e);
     }
     app.listen(PORT, () => {
         logger_1.logger.info(`🚀 Server is running on port ${PORT}`);

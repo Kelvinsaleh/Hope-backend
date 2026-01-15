@@ -34,8 +34,9 @@ router.get('/stats', communityController_1.getCommunityStats);
 router.get('/challenges', communityController_1.getActiveChallenges);
 router.get('/prompts', communityController_1.getDailyPrompts);
 router.get('/activity', communityController_1.getRecentActivity);
-router.get('/posts/:postId/comments', communityController_1.getPostComments);
 router.get('/feed', communityController_1.getFeed);
+router.get('/posts/:postId', communityController_1.getPost);
+router.get('/posts/:postId/comments', communityController_1.getPostComments);
 // Protected routes (auth required)
 router.use(auth_1.authenticateToken);
 // Posts

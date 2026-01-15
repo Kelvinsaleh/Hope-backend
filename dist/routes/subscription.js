@@ -12,6 +12,7 @@ router.use(auth_1.authenticateToken);
 // Subscription routes
 router.get("/status", subscriptionController_1.getSubscriptionStatus);
 router.post("/", subscriptionController_1.createSubscription);
+router.post("/start-trial", subscriptionController_1.startFreeTrial);
 router.put("/:subscriptionId", subscriptionController_1.updateSubscription);
 router.get("/premium/:feature", subscriptionController_1.checkPremiumAccess);
 // User tier management

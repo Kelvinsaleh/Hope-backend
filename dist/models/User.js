@@ -59,6 +59,8 @@ const UserSchema = new mongoose_1.Schema({
         expiresAt: { type: Date }
     },
     trialEndsAt: { type: Date, index: true }, // When the 7-day premium trial ends
+    trialStartedAt: { type: Date },
+    trialUsed: { type: Boolean, default: false },
     blockedUsers: [{ type: mongoose_1.Schema.Types.ObjectId, ref: 'User' }],
     suspendedAt: { type: Date },
     suspensionReason: { type: String },

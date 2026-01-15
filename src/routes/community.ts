@@ -4,6 +4,7 @@ import { authenticateToken } from '../middleware/auth';
 import {
   getCommunitySpaces,
   getSpacePosts,
+  getPost,
   createPost,
   reactToPost,
   createComment,
@@ -51,8 +52,9 @@ router.get('/stats', getCommunityStats);
 router.get('/challenges', getActiveChallenges);
 router.get('/prompts', getDailyPrompts);
 router.get('/activity', getRecentActivity);
-router.get('/posts/:postId/comments', getPostComments);
 router.get('/feed', getFeed);
+router.get('/posts/:postId', getPost);
+router.get('/posts/:postId/comments', getPostComments);
 
 // Protected routes (auth required)
 router.use(authenticateToken);

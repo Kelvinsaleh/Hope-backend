@@ -195,6 +195,113 @@ async function generateQueuedAIResponse(aiContext) {
 const memoryCache = new Map();
 const MEMORY_CACHE_TTL_MS = Number(process.env.MEMORY_CACHE_TTL_MS) || 1000 * 60 * 5; // 5 minutes
 const MEMORY_CACHE_MAX_ENTRIES = Number(process.env.MEMORY_CACHE_MAX_ENTRIES) || 200; // max entries in cache
+function detectIntent(userMessage, recentMessages) {
+    const text = (userMessage || '').toLowerCase();
+    if (!text && recentMessages.length > 0) {
+        const last = recentMessages[recentMessages.length - 1];
+        if (last && last.content)
+            return detectIntent(last.content, []);
+    }
+    if (text.includes('congrats') || text.includes('promotion') || text.includes('won') || text.includes('excited') || text.includes('celebrate')) {
+        return 'celebration';
+    }
+    if (text.includes('anxious') || text.includes('anxiety') || text.includes('stressed') || text.includes('overwhelmed') || text.includes('sad') || text.includes('depressed')) {
+        return 'distress';
+    }
+    if (text.includes('thinking about') || text.includes('reflect') || text.includes('journal') || text.includes('why') || text.includes('what does it mean')) {
+        return 'reflection';
+    }
+    return 'casual';
+}
+function buildSelectiveMemorySnippet(memoryData, intent) {
+    if (!memoryData)
+        return '';
+    const parts = [];
+    // Stable profile facts (small)
+    const prefs = memoryData.profile?.preferences || {};
+    const goals = (memoryData.profile?.goals || []).slice(0, 3);
+    const interests = (memoryData.profile?.interests || []).slice(0, 3);
+    const topicsToAvoid = prefs.topicsToAvoid || [];
+    if (goals.length)
+        parts.push(`Goals: ${goals.join(', ')}`);
+    if (interests.length)
+        parts.push(`Interests: ${interests.join(', ')}`);
+    if (prefs.communicationStyle)
+        parts.push(`Prefers style: ${prefs.communicationStyle}`);
+    // Mood/time patterns (very small)
+    if (memoryData.moodPatterns && memoryData.moodPatterns.length > 0) {
+        const recentMood = memoryData.moodPatterns[0];
+        if (recentMood?.mood !== undefined) {
+            parts.push(`Recent mood score: ${recentMood.mood}`);
+        }
+    }
+    // Intent-specific cues
+    if (intent === 'celebration' && goals.length) {
+        parts.push(`Celebrate progress on goals: ${goals[0]}`);
+    }
+    if (intent === 'distress' && prefs.topicsToAvoid && prefs.topicsToAvoid.length > 0) {
+        parts.push(`Avoid sensitive topics: ${prefs.topicsToAvoid.slice(0, 2).join(', ')}`);
+    }
+    // Hard cap to keep snippet tiny (~200-300 tokens)
+    let snippet = parts.join(' | ');
+    // Safety: mask topicsToAvoid text when intent is distress to avoid resurfacing sensitive areas
+    if (intent === 'distress' && topicsToAvoid.length > 0) {
+        const mask = '[filtered]';
+        topicsToAvoid.slice(0, 2).forEach((t) => {
+            snippet = snippet.replace(t, mask);
+        });
+    }
+    // Final token cap
+    if ((0, conversationOptimizer_1.estimateTokens)(snippet) > 300) {
+        snippet = snippet.slice(0, 1200); // extra safety trim
+    }
+    return snippet;
+}
+// Minimal empty memory placeholder to avoid blocking when cache is cold
+function getEmptyMemory() {
+    return {
+        profile: {
+            name: "User",
+            bio: '',
+            goals: [],
+            challenges: [],
+            interests: [],
+            preferences: {
+                communicationStyle: 'gentle',
+                topicsToAvoid: [],
+                preferredTechniques: [],
+            },
+            experienceLevel: 'beginner',
+        },
+        journalEntries: [],
+        meditationHistory: [],
+        moodPatterns: [],
+        therapySessions: [],
+        insights: [],
+        lastUpdated: new Date(),
+    };
+}
+// Fast, non-blocking memory retrieval:
+// - return cached memory immediately if present
+// - otherwise return empty memory and kick off an async warm-up
+function getMemoryFast(userId, cacheKey) {
+    const cached = getCachedMemory(cacheKey);
+    if (cached) {
+        return cached;
+    }
+    // Warm the cache asynchronously without blocking the request
+    (async () => {
+        try {
+            const mem = await gatherUserMemory(userId);
+            setCachedMemory(cacheKey, mem);
+            logger_1.logger.debug(`Warm-filled memory cache for user ${userId} (key=${cacheKey})`);
+        }
+        catch (err) {
+            logger_1.logger.warn('Async memory warm failed', { userId, error: err });
+        }
+    })();
+    return getEmptyMemory();
+}
 // Periodic cleanup task to evict expired cache entries
 setInterval(() => {
     try {
@@ -219,6 +326,7 @@ function getCachedMemory(key) {
         logger_1.logger.debug(`Evicted expired memory cache key=${key}`);
         return null;
     }
+    logger_1.logger.debug(`Memory cache hit key=${key}`);
     return entry.memory;
 }
 function setCachedMemory(key, memory) {
@@ -239,6 +347,7 @@ function setCachedMemory(key, memory) {
         }
     }
     memoryCache.set(key, { memory, lastUpdated: Date.now() });
+    logger_1.logger.debug(`Memory cache set key=${key}`);
 }
 // Expose helper to invalidate a user's memory cache entries. This should be
 // called after profile updates so that subsequent memory-enhanced requests
@@ -407,23 +516,8 @@ const sendMemoryEnhancedMessage = async (req, res) => {
         // Use memoryVersion or a compact request to avoid rebuilding full memory every call.
         // Prefer a cached memory entry keyed by memoryVersion if provided; otherwise
         // fall back to userId-based caching for short-lived reuse.
-        let memoryData = null;
         const cacheKey = memoryVersion ? `${userId}:${memoryVersion}` : `${userId}:latest`;
-        if (memoryVersion && memoryCache.has(cacheKey)) {
-            // Reuse cached memory blob for this memoryVersion
-            memoryData = memoryCache.get(cacheKey).memory;
-            logger_1.logger.debug(`Using cached memory for user ${userId} (version ${memoryVersion})`);
-        }
-        else if (!memoryVersion && memoryCache.has(cacheKey)) {
-            memoryData = memoryCache.get(cacheKey).memory;
-            logger_1.logger.debug(`Using latest cached memory for user ${userId}`);
-        }
-        // If we don't have cached memory, build it and cache under the computed key
-        if (!memoryData) {
-            memoryData = await gatherUserMemory(userId);
-            memoryCache.set(cacheKey, { memory: memoryData, lastUpdated: Date.now() });
-            logger_1.logger.debug(`Built and cached memory for user ${userId} (key=${cacheKey})`);
-        }
+        const memoryData = getMemoryFast(userId, cacheKey);
         // Merge client-supplied small profile/deltas if provided. This allows the
         // frontend to send quick edits without needing to persist immediately.
         const suppliedProfile = (userMemory && userMemory.profile) || req.body?.userProfile;
@@ -520,15 +614,8 @@ const sendMemoryEnhancedMessage = async (req, res) => {
                 const ids = recentJournalIds.map(id => mongoose_1.Types.ObjectId.isValid(id) ? new mongoose_1.Types.ObjectId(id) : null).filter(Boolean);
                 if (ids.length > 0) {
                     const entries = await JournalEntry_1.JournalEntry.find({ _id: { $in: ids }, userId: userIdObj }).lean();
-                    // Replace memoryData.journalEntries/recentJournals with fetched entries (serialized)
+                    // Replace memoryData.journalEntries with fetched entries
                     memoryData.journalEntries = entries;
-                    memoryData.recentJournals = entries.map(e => ({
-                        id: e._id,
-                        title: e.title,
-                        excerpt: (e.content || '').substring(0, 200),
-                        mood: e.mood,
-                        createdAt: e.createdAt,
-                    }));
                 }
             }
             catch (e) {
@@ -659,32 +746,12 @@ const sendMemoryEnhancedMessage = async (req, res) => {
             conversationHistory += `**Current conversation:**\n${currentConversationFormatted}\n\n`;
             logger_1.logger.info(`AI context optimized: ${recentMessages.length} recent messages${oldMessagesSummary ? ' + summary' : ''} (${totalTokens} tokens) - but all ${allCurrentSessionMessages.length} messages saved to DB`);
         }
-        // PRIORITY 2: Persistent memory - key facts from LongTermMemory
-        try {
-            const persistentMemories = await LongTermMemory_1.LongTermMemoryModel.find({
-                userId: userIdObj, // Use validated ObjectId
-            })
-                .sort({ importance: -1, timestamp: -1 })
-                .limit(15) // Top 15 most important facts
-                .lean();
-            if (persistentMemories.length > 0) {
-                conversationHistory += `**Important context (from previous conversations):**\n`;
-                const groupedMemories = {};
-                persistentMemories.forEach((memory) => {
-                    if (!groupedMemories[memory.type]) {
-                        groupedMemories[memory.type] = [];
-                    }
-                    groupedMemories[memory.type].push(`- ${memory.content}`);
-                });
-                Object.entries(groupedMemories).forEach(([type, items]) => {
-                    conversationHistory += `${type.replace('_', ' ').toUpperCase()}: ${items.join(' ')}\n`;
-                });
-                conversationHistory += '\n';
-                logger_1.logger.debug(`Included ${persistentMemories.length} persistent memories`);
-            }
-        }
-        catch (memoryError) {
-            logger_1.logger.warn('Failed to fetch persistent memories:', memoryError.message);
+        // PRIORITY 2: Selective long-term memory injection (cached, tiny, intent-driven)
+        const intent = detectIntent(message, recentMessages);
+        const selectiveMemory = buildSelectiveMemorySnippet(memoryData, intent);
+        if (selectiveMemory) {
+            conversationHistory += `**Relevant context:** ${selectiveMemory}\n\n`;
+            logger_1.logger.debug(`Included selective memory for intent=${intent}`);
         }
         // PRIORITY 3: Previous sessions - truncated for efficiency
         // Limit to last 2 previous sessions, and last 15 messages per session (reduced for performance)

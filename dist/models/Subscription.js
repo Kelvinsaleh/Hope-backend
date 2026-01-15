@@ -45,7 +45,7 @@ const SubscriptionSchema = new mongoose_1.Schema({
     planId: {
         type: String,
         required: true,
-        enum: ['monthly', 'annually']
+        enum: ['monthly', 'annually', 'trial']
     },
     planName: { type: String, required: true },
     amount: { type: Number, required: true }, // Amount in base currency (USD)
@@ -53,13 +53,17 @@ const SubscriptionSchema = new mongoose_1.Schema({
     status: {
         type: String,
         required: true,
-        enum: ['pending', 'active', 'cancelled', 'expired'],
+        enum: ['pending', 'active', 'cancelled', 'expired', 'trialing'],
         default: 'pending',
         index: true
     },
     startDate: { type: Date },
     expiresAt: { type: Date, index: true },
     activatedAt: { type: Date },
+    trialStartsAt: { type: Date },
+    trialEndsAt: { type: Date, index: true },
+    cancelledAt: { type: Date },
+    autoRenew: { type: Boolean, default: true },
     paystackReference: { type: String, index: true },
     paystackAccessCode: { type: String },
     paystackTransactionId: { type: String },

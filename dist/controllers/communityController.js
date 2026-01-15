@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.saveImageMetadata = exports.uploadVideo = exports.uploadImage = exports.sharePost = exports.deleteComment = exports.deletePost = exports.getFeed = exports.getCommunityStats = exports.getRecentActivity = exports.getDailyPrompts = exports.joinChallenge = exports.getActiveChallenges = exports.createComment = exports.getPostComments = exports.reactToPost = exports.createPost = exports.getSpacePosts = exports.getCommunitySpaces = void 0;
+exports.saveImageMetadata = exports.uploadVideo = exports.uploadImage = exports.sharePost = exports.deleteComment = exports.deletePost = exports.getFeed = exports.getCommunityStats = exports.getRecentActivity = exports.getDailyPrompts = exports.joinChallenge = exports.getActiveChallenges = exports.createComment = exports.getPostComments = exports.reactToPost = exports.getPost = exports.createPost = exports.getSpacePosts = exports.getCommunitySpaces = void 0;
 const mongoose_1 = require("mongoose");
 const blob_1 = require("@vercel/blob");
 const communityModeration_1 = require("../middleware/communityModeration");
@@ -70,13 +70,13 @@ const getCommunitySpaces = async (req, res) => {
             const uniqueMembers = await Community_1.CommunityPost.distinct('userId', { spaceId: space._id });
             // Get latest post for preview
             const latestPost = await Community_1.CommunityPost.findOne({ spaceId: space._id })
-                .populate('userId', 'username')
+                .populate('userId', 'name')
                 .sort({ createdAt: -1 });
             // Get total posts in this space
             const postCount = await Community_1.CommunityPost.countDocuments({ spaceId: space._id });
-            // Extract username safely
+            // Extract name safely
             const username = latestPost && !latestPost.isAnonymous && latestPost.userId
-                ? latestPost.userId.username || 'Anonymous'
+                ? latestPost.userId.name || 'Anonymous'
                 : 'Anonymous';
             return {
                 ...space.toObject(),
@@ -114,7 +114,7 @@ const getSpacePosts = async (req, res) => {
             spaceId,
             isDeleted: false
         })
-            .populate('userId', 'username')
+            .populate('userId', 'name')
             .populate('comments')
             .sort({ createdAt: -1 })
             .skip(skip)
@@ -224,7 +224,7 @@ const createPost = async (req, res) => {
             post.aiReflection = aiReflection;
             await post.save();
         }
-        await post.populate('userId', 'username');
+        await post.populate('userId', 'name');
         res.status(201).json({
             success: true,
             post,
@@ -240,13 +240,43 @@ const createPost = async (req, res) => {
     }
 };
 exports.createPost = createPost;
+// Get a single post by ID
+const getPost = async (req, res) => {
+    try {
+        const { postId } = req.params;
+        const post = await Community_1.CommunityPost.findOne({
+            _id: postId,
+            isDeleted: false
+        })
+            .populate('userId', 'name')
+            .populate('spaceId', 'name icon color');
+        if (!post) {
+            return res.status(404).json({
+                success: false,
+                error: 'Post not found'
+            });
+        }
+        res.json({
+            success: true,
+            post
+        });
+    }
+    catch (error) {
+        logger_1.logger.error('Error fetching post:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch post'
+        });
+    }
+};
+exports.getPost = getPost;
 // React to a post
 const reactToPost = async (req, res) => {
     try {
         const userId = new mongoose_1.Types.ObjectId(req.user._id);
         const { postId } = req.params;
         const { reactionType } = req.body; // 'heart', 'support', 'growth'
-        const post = await Community_1.CommunityPost.findById(postId).populate('userId');
+        const post = await Community_1.CommunityPost.findById(postId).populate('userId', 'name');
         if (!post) {
             return res.status(404).json({
                 success: false,
@@ -315,7 +345,7 @@ const getPostComments = async (req, res) => {
             parentCommentId: { $exists: false },
             isDeleted: false
         })
-            .populate('userId', 'username')
+            .populate('userId', 'name')
             .sort({ createdAt: 1 });
         // Get replies for each top-level comment
         const commentsWithReplies = await Promise.all(topLevelComments.map(async (comment) => {
@@ -323,7 +353,7 @@ const getPostComments = async (req, res) => {
                 parentCommentId: comment._id,
                 isDeleted: false
             })
-                .populate('userId', 'username')
+                .populate('userId', 'name')
                 .sort({ createdAt: 1 });
             return {
                 ...comment.toObject(),
@@ -375,7 +405,7 @@ const createComment = async (req, res) => {
         });
         await comment.save();
         // Get post to find owner for notifications
-        const post = await Community_1.CommunityPost.findById(postObjectId).populate('userId');
+        const post = await Community_1.CommunityPost.findById(postObjectId).populate('userId', 'name');
         if (!post) {
             return res.status(404).json({
                 success: false,
@@ -386,7 +416,7 @@ const createComment = async (req, res) => {
         await Community_1.CommunityPost.findByIdAndUpdate(postObjectId, {
             $push: { comments: comment._id }
         });
-        await comment.populate('userId', 'username');
+        await comment.populate('userId', 'name');
         // Create notification for post owner (if not self-comment)
         const postOwnerId = post.userId;
         if (postOwnerId && !postOwnerId._id.equals(userId)) {
@@ -400,7 +430,7 @@ const createComment = async (req, res) => {
             });
             // If replying to a comment, notify the comment owner too
             if (parentCommentId) {
-                const parentComment = await Community_1.CommunityComment.findById(parentCommentId).populate('userId');
+                const parentComment = await Community_1.CommunityComment.findById(parentCommentId).populate('userId', 'name');
                 if (parentComment) {
                     const parentCommentOwnerId = parentComment.userId;
                     if (parentCommentOwnerId && !parentCommentOwnerId._id.equals(userId) && !parentCommentOwnerId._id.equals(postOwnerId._id)) {
@@ -598,14 +628,14 @@ const getRecentActivity = async (req, res) => {
     try {
         // Get recent posts
         const recentPosts = await Community_1.CommunityPost.find()
-            .populate('userId', 'username')
+            .populate('userId', 'name')
             .populate('spaceId', 'name icon')
             .sort({ createdAt: -1 })
             .limit(5)
             .select('content userId spaceId createdAt mood isAnonymous');
         // Get recent comments
         const recentComments = await Community_1.CommunityComment.find()
-            .populate('userId', 'username')
+            .populate('userId', 'name')
             .populate('postId')
             .sort({ createdAt: -1 })
             .limit(5)
@@ -699,7 +729,7 @@ const getFeed = async (req, res) => {
                 $project: {
                     userId: {
                         _id: '$user._id',
-                        username: '$user.username'
+                        name: '$user.name'
                     },
                     spaceId: 1,
                     content: 1,

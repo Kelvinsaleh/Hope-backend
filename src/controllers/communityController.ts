@@ -232,6 +232,38 @@ export const createPost = async (req: Request, res: Response) => {
   }
 };
 
+// Get a single post by ID
+export const getPost = async (req: Request, res: Response) => {
+  try {
+    const { postId } = req.params;
+    
+    const post = await CommunityPost.findOne({ 
+      _id: postId,
+      isDeleted: false 
+    })
+      .populate('userId', 'name')
+      .populate('spaceId', 'name icon color');
+    
+    if (!post) {
+      return res.status(404).json({
+        success: false,
+        error: 'Post not found'
+      });
+    }
+    
+    res.json({
+      success: true,
+      post
+    });
+  } catch (error) {
+    logger.error('Error fetching post:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch post'
+    });
+  }
+};
+
 // React to a post
 export const reactToPost = async (req: Request, res: Response) => {
   try {

@@ -16,6 +16,7 @@ router.post("/verify", auth_1.authenticateToken, paymentController_1.verifyPayme
 router.post("/webhook", express_1.default.raw({ type: 'application/json' }), paymentController_1.handleWebhook);
 // Subscription status (requires auth)
 router.get("/subscription/status", auth_1.authenticateToken, subscriptionController_1.getSubscriptionStatus);
+router.post("/subscription/start-trial", auth_1.authenticateToken, subscriptionController_1.startFreeTrial);
 // Create a subscription record (frontend may call this after initialization)
 router.post("/subscription", auth_1.authenticateToken, subscriptionController_1.createSubscription);
 // Create a subscription in Paystack (recurring)

@@ -8,6 +8,7 @@ const mongoose_1 = require("mongoose");
 // Paystack configuration
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || '';
 const PAYSTACK_PUBLIC_KEY = process.env.PAYSTACK_PUBLIC_KEY || '';
+const TRIAL_DAYS = Number(process.env.PREMIUM_TRIAL_DAYS || 7);
 // Exchange rate: 1 USD = 130 KES (approximate)
 const USD_TO_KES_RATE = 130;
 const PLANS = [
@@ -28,9 +29,48 @@ const PLANS = [
         paystackPlanCode: process.env.PAYSTACK_ANNUAL_PLAN_CODE || 'PLN_annual_premium'
     }
 ];
+const PLAN_DURATION = {
+    monthly: 30,
+    annually: 365,
+    trial: TRIAL_DAYS
+};
+function computeExpiry(planId, from = new Date()) {
+    const days = PLAN_DURATION[planId] || PLAN_DURATION.monthly;
+    const expiry = new Date(from);
+    expiry.setDate(expiry.getDate() + days);
+    return expiry;
+}
 // Convert USD to KES for Paystack
 function convertUsdToKes(usdAmount) {
     return Math.round(usdAmount * USD_TO_KES_RATE);
+}
+async function applyPremiumToUser(userId, subscription, clearTrial = true) {
+    const update = {
+        'subscription.isActive': true,
+        'subscription.tier': 'premium',
+        'subscription.subscriptionId': subscription?._id,
+        'subscription.planId': subscription?.planId,
+        'subscription.activatedAt': subscription?.activatedAt || new Date(),
+        'subscription.expiresAt': subscription?.expiresAt || computeExpiry(subscription?.planId || 'monthly')
+    };
+    if (clearTrial) {
+        update.trialEndsAt = null;
+        update.trialStartedAt = null;
+    }
+    await User_1.User.findByIdAndUpdate(userId, {
+        $set: update,
+        ...(clearTrial ? { $unset: { trialEndsAt: "", trialStartedAt: "" } } : {})
+    });
+}
+async function applyFreeToUser(userId, expiresAt = new Date()) {
+    await User_1.User.findByIdAndUpdate(userId, {
+        $set: {
+            'subscription.isActive': false,
+            'subscription.tier': 'free',
+            'subscription.expiresAt': expiresAt
+        },
+        $unset: { trialEndsAt: "", trialStartedAt: "" }
+    });
 }
 // Initialize payment with Paystack
 const initializePayment = async (req, res) => {
@@ -194,7 +234,8 @@ const verifyPayment = async (req, res) => {
                 'subscription.planId': planId,
                 'subscription.activatedAt': now,
                 'subscription.expiresAt': expiresAt
-            }
+            },
+            $unset: { trialEndsAt: "", trialStartedAt: "" }
         });
         logger_1.logger.info(`Payment verified and user ${userId} upgraded to premium`);
         res.json({
@@ -245,13 +286,19 @@ const handleWebhook = async (req, res) => {
                     if (sub.next_payment_date) {
                         local.expiresAt = new Date(sub.next_payment_date * 1000);
                     }
+                    if ((sub.status === 'active' || sub.status === 'success') && !local.expiresAt) {
+                        local.expiresAt = computeExpiry(local.planId || 'monthly', new Date());
+                    }
+                    if (!local.activatedAt && (sub.status === 'active' || sub.status === 'success')) {
+                        local.activatedAt = new Date();
+                    }
                     await local.save();
                     // Update user tier according to subscription status
                     if (sub.status === 'active' || sub.status === 'success') {
-                        await User_1.User.findByIdAndUpdate(local.userId, { $set: { 'subscription.isActive': true, 'subscription.tier': 'premium', 'subscription.subscriptionId': local._id, 'subscription.expiresAt': local.expiresAt } });
+                        await applyPremiumToUser(local.userId, local);
                     }
                     else if (sub.status === 'cancelled' || sub.status === 'disabled' || sub.status === 'inactive') {
-                        await User_1.User.findByIdAndUpdate(local.userId, { $set: { 'subscription.isActive': false, 'subscription.tier': 'free' } });
+                        await applyFreeToUser(local.userId, local.expiresAt || new Date());
                     }
                 }
             }
@@ -265,8 +312,10 @@ const handleWebhook = async (req, res) => {
                 if (subscription) {
                     subscription.status = 'active';
                     subscription.paystackTransactionId = transaction.id || transaction.transaction_id;
+                    subscription.activatedAt = new Date();
+                    subscription.expiresAt = subscription.expiresAt || computeExpiry(subscription.planId || 'monthly');
                     await subscription.save();
-                    await User_1.User.findByIdAndUpdate(subscription.userId, { $set: { 'subscription.isActive': true, 'subscription.tier': 'premium', 'subscription.subscriptionId': subscription._id, 'subscription.expiresAt': subscription.expiresAt } });
+                    await applyPremiumToUser(subscription.userId, subscription);
                 }
             }
         }
@@ -292,6 +341,9 @@ const createPaystackSubscription = async (req, res) => {
         const user = await User_1.User.findById(userId);
         if (!user)
             return res.status(404).json({ success: false, error: 'User not found' });
+        const trialEligible = !user?.trialUsed;
+        const now = new Date();
+        const trialEndsAt = trialEligible ? computeExpiry('trial', now) : null;
         // Ensure Paystack customer exists (search by email)
         const customerSearch = await fetch(`https://api.paystack.co/customer?email=${encodeURIComponent(user.email)}`, {
             method: 'GET',
@@ -334,34 +386,58 @@ const createPaystackSubscription = async (req, res) => {
         }
         // Save subscription record
         const paystackSub = subscriptionData.data;
+        const initialStatus = trialEligible ? 'trialing' : (paystackSub.status || 'active');
+        const initialExpires = trialEligible
+            ? trialEndsAt
+            : (paystackSub.next_payment_date ? new Date(paystackSub.next_payment_date * 1000) : computeExpiry(planId, now));
         const newSub = new Subscription_1.Subscription({
             userId: new mongoose_1.Types.ObjectId(userId),
             planId,
             planName: plan.name,
             amount: plan.price,
             currency: plan.currency,
-            status: paystackSub.status || 'active',
+            status: initialStatus,
             paystackSubscriptionCode: paystackSub.subscription_code || paystackSub.id,
             paystackData: paystackSub,
-            startDate: paystackSub.start_date ? new Date(paystackSub.start_date * 1000) : new Date(),
-            expiresAt: paystackSub.next_payment_date ? new Date(paystackSub.next_payment_date * 1000) : null
+            startDate: paystackSub.start_date ? new Date(paystackSub.start_date * 1000) : now,
+            activatedAt: now,
+            expiresAt: initialExpires,
+            trialStartsAt: trialEligible ? now : undefined,
+            trialEndsAt: trialEligible ? trialEndsAt : undefined,
+            autoRenew: true
         });
         await newSub.save();
         // Update user to premium if subscription is active
-        if (paystackSub.status === 'active' || paystackSub.status === 'success') {
+        if (initialStatus === 'active') {
+            await applyPremiumToUser(userId, newSub);
+        }
+        else {
             await User_1.User.findByIdAndUpdate(userId, {
                 $set: {
                     'subscription.isActive': true,
                     'subscription.tier': 'premium',
                     'subscription.subscriptionId': newSub._id,
                     'subscription.planId': planId,
-                    'subscription.activatedAt': new Date(),
-                    'subscription.expiresAt': newSub.expiresAt
+                    'subscription.activatedAt': now,
+                    'subscription.expiresAt': initialExpires,
+                    trialEndsAt: trialEndsAt,
+                    trialStartedAt: trialEligible ? now : undefined,
+                    trialUsed: true
                 }
             });
         }
         // If Paystack provided an authorization_url for further action, return it
-        return res.json({ success: true, subscription: paystackSub, authorization_url: subscriptionData.data.authorization_url || null });
+        return res.json({
+            success: true,
+            subscription: paystackSub,
+            authorization_url: subscriptionData.data.authorization_url || null,
+            trial: {
+                isActive: trialEligible,
+                trialEndsAt,
+                trialStart: trialEligible ? now : null,
+                plan: planId
+            }
+        });
     }
     catch (error) {
         logger_1.logger.error('Error creating Paystack subscription:', error);
