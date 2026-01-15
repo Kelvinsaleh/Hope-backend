@@ -13,4 +13,6 @@ const router = express_1.default.Router();
 router.use(auth_1.authenticateToken);
 // Memory-enhanced chat route with rate limiting
 router.post("/", premiumLimits_1.enforceChatDailyLimit, rateLimiter_1.aiChatRateLimiter.middleware(), memoryEnhancedChat_1.sendMemoryEnhancedMessage);
+// Get user's stored memories (LongTermMemory facts)
+router.get("/memories", memoryEnhancedChat_1.getUserMemories);
 exports.default = router;

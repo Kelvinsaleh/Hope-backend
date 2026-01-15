@@ -215,11 +215,13 @@ export function extractKeyFacts(
     context?: string;
   }> = [];
 
-  // Simple extraction based on keywords and patterns
-  const goalKeywords = ['goal', 'want to', 'hope to', 'plan to', 'aim to', 'target'];
-  const triggerKeywords = ['trigger', 'makes me', 'causes', 'when', 'stress', 'anxious'];
-  const insightKeywords = ['realized', 'understood', 'learned', 'insight', 'realize'];
-  const patternKeywords = ['always', 'usually', 'pattern', 'habit', 'tend to'];
+  // Enhanced extraction based on keywords and patterns
+  const goalKeywords = ['goal', 'want to', 'hope to', 'plan to', 'aim to', 'target', 'wish', 'dream', 'aspire', 'strive'];
+  const triggerKeywords = ['trigger', 'makes me', 'causes', 'when', 'stress', 'anxious', 'anxiety', 'worried', 'afraid', 'scared', 'fear', 'panic'];
+  const insightKeywords = ['realized', 'understood', 'learned', 'insight', 'realize', 'understand', 'discovered', 'found out', 'noticed', 'aware'];
+  const patternKeywords = ['always', 'usually', 'pattern', 'habit', 'tend to', 'often', 'frequently', 'typically'];
+  const preferenceKeywords = ['prefer', 'like', 'dislike', 'enjoy', 'love', 'hate', 'favorite', 'favourite', 'better', 'best'];
+  const emotionalKeywords = ['feel', 'feeling', 'emotion', 'emotional', 'mood', 'sad', 'happy', 'angry', 'depressed', 'lonely', 'excited'];
 
   for (const msg of messages) {
     if (msg.role !== 'user') continue;
@@ -273,6 +275,55 @@ export function extractKeyFacts(
           });
           break;
         }
+      }
+    }
+
+    // Extract preferences
+    if (preferenceKeywords.some(keyword => content.includes(keyword))) {
+      const sentences = msg.content?.split(/[.!?]/) || [];
+      for (const sentence of sentences) {
+        if (preferenceKeywords.some(keyword => sentence.toLowerCase().includes(keyword))) {
+          facts.push({
+            type: 'preference',
+            content: sentence.trim(),
+            importance: 6,
+            tags: ['preference', 'user-preference'],
+            context: msg.timestamp?.toISOString(),
+          });
+          break;
+        }
+      }
+    }
+
+    // Extract emotional themes and coping patterns
+    if (emotionalKeywords.some(keyword => content.includes(keyword)) || patternKeywords.some(keyword => content.includes(keyword))) {
+      // Look for patterns indicating coping mechanisms
+      if (patternKeywords.some(keyword => content.includes(keyword))) {
+        const sentences = msg.content?.split(/[.!?]/) || [];
+        for (const sentence of sentences) {
+          if (patternKeywords.some(keyword => sentence.toLowerCase().includes(keyword))) {
+            facts.push({
+              type: 'coping_pattern',
+              content: sentence.trim(),
+              importance: 7,
+              tags: ['pattern', 'behavior'],
+              context: msg.timestamp?.toISOString(),
+            });
+            break;
+          }
+        }
+      }
+      
+      // Extract emotional themes
+      if (emotionalKeywords.some(keyword => content.includes(keyword)) && content.length > 20) {
+        // Extract emotional context
+        facts.push({
+          type: 'emotional_theme',
+          content: msg.content.trim().substring(0, 200), // First 200 chars
+          importance: 7,
+          tags: ['emotion', 'emotional-state'],
+          context: msg.timestamp?.toISOString(),
+        });
       }
     }
   }

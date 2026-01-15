@@ -77,6 +77,14 @@ interface UserMemory {
   moodPatterns: any[];
   therapySessions: any[];
   insights: any[];
+  facts: Array<{
+    type: 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference';
+    content: string;
+    importance: number;
+    tags: string[];
+    context?: string;
+    timestamp: Date;
+  }>;
   lastUpdated: Date;
 }
 
@@ -292,6 +300,23 @@ function buildSelectiveMemorySnippet(memoryData: UserMemory, intent: ChatIntent)
 
   const parts: string[] = [];
 
+  // Include long-term memories (stored facts from previous conversations)
+  const facts = memoryData.facts || [];
+  if (facts.length > 0) {
+    // Group facts by type and select most important ones
+    const importantFacts = facts
+      .filter(f => f.importance >= 6) // Only high-importance facts
+      .slice(0, 10) // Top 10 most important
+      .map(f => {
+        const typeLabel = f.type.replace('_', ' ');
+        return `- ${typeLabel}: ${f.content}`;
+      });
+    
+    if (importantFacts.length > 0) {
+      parts.push(`**Important things to remember about this person:**\n${importantFacts.join('\n')}`);
+    }
+  }
+
   // Stable profile facts (small)
   const prefs = memoryData.profile?.preferences || {};
   const goals = (memoryData.profile?.goals || []).slice(0, 3);
@@ -357,6 +382,7 @@ function getEmptyMemory(): UserMemory {
     moodPatterns: [],
     therapySessions: [],
     insights: [],
+    facts: [],
     lastUpdated: new Date(),
   };
 }
@@ -861,14 +887,32 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
 
     // Extract key facts from ALL messages for persistent memory (async, don't block)
     // This uses the full message history, not the truncated version
-    if (allCurrentSessionMessages.length > 10) {
-      const keyFacts = extractKeyFacts(allCurrentSessionMessages, 10); // Use ALL messages for fact extraction
+    // Extract facts more aggressively - start after just 5 messages
+    if (allCurrentSessionMessages.length >= 5) {
+      // Extract more facts for longer conversations
+      const factLimit = allCurrentSessionMessages.length > 20 ? 15 : 10;
+      const keyFacts = extractKeyFacts(allCurrentSessionMessages, factLimit);
       if (keyFacts.length > 0) {
+        logger.info(`Extracted ${keyFacts.length} key facts from conversation`);
         // Store key facts asynchronously (don't wait for completion)
         storeKeyFacts(userId, keyFacts).catch((error: any) => {
           logger.warn('Failed to store key facts:', error.message);
         });
       }
+    }
+    
+    // Also extract from individual messages with important keywords
+    // Check the current message for immediate facts
+    const currentMessageFacts = extractKeyFacts([{
+      role: 'user',
+      content: message,
+      timestamp: new Date(),
+    }], 3);
+    if (currentMessageFacts.length > 0) {
+      logger.info(`Extracted ${currentMessageFacts.length} immediate facts from current message`);
+      storeKeyFacts(userId, currentMessageFacts).catch((error: any) => {
+        logger.warn('Failed to store immediate key facts:', error.message);
+      });
     }
 
     // Format current conversation for AI prompt (truncated/summarized version)
@@ -1167,6 +1211,22 @@ async function gatherUserMemory(userId: string): Promise<UserMemory> {
       .limit(5)
       .lean();
 
+    // Get long-term memories (stored facts from previous conversations)
+    const longTermMemories = await LongTermMemoryModel.find({ userId: userIdObj })
+      .sort({ importance: -1, timestamp: -1 })
+      .limit(50) // Get top 50 most important memories
+      .lean();
+
+    // Convert to facts format
+    const facts = longTermMemories.map((mem: any) => ({
+      type: mem.type,
+      content: mem.content,
+      importance: mem.importance,
+      tags: mem.tags || [],
+      context: mem.context,
+      timestamp: mem.timestamp || mem.createdAt,
+    }));
+
     // Fetch actual user profile from database
     let userProfile: any = null;
     try {
@@ -1190,6 +1250,8 @@ async function gatherUserMemory(userId: string): Promise<UserMemory> {
       experienceLevel: userProfile?.experienceLevel || 'beginner',
     };
 
+    logger.info(`Loaded ${facts.length} long-term memories for user ${userId}`);
+
     return {
       profile: profileData,
       journalEntries,
@@ -1197,6 +1259,7 @@ async function gatherUserMemory(userId: string): Promise<UserMemory> {
       moodPatterns,
       therapySessions,
       insights: [],
+      facts,
       lastUpdated: new Date(),
     };
   } catch (error) {
@@ -1220,10 +1283,56 @@ async function gatherUserMemory(userId: string): Promise<UserMemory> {
       moodPatterns: [],
       therapySessions: [],
       insights: [],
+      facts: [],
       lastUpdated: new Date(),
     };
   }
 }
+
+/**
+ * Get user's stored LongTermMemory facts
+ * Endpoint: GET /memory-enhanced-chat/memories
+ */
+export const getUserMemories = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).userId;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const userIdObj = new Types.ObjectId(userId);
+    
+    // Get long-term memories (stored facts from previous conversations)
+    const longTermMemories = await LongTermMemoryModel.find({ userId: userIdObj })
+      .sort({ importance: -1, timestamp: -1 })
+      .limit(50) // Get top 50 most important memories
+      .lean();
+
+    // Convert to response format
+    const facts = longTermMemories.map((mem: any) => ({
+      id: mem._id.toString(),
+      type: mem.type,
+      content: mem.content,
+      importance: mem.importance,
+      tags: mem.tags || [],
+      context: mem.context,
+      timestamp: mem.timestamp || mem.createdAt,
+      createdAt: mem.createdAt,
+    }));
+
+    res.json({
+      success: true,
+      data: facts,
+      count: facts.length,
+    });
+  } catch (error: any) {
+    logger.error('Error fetching user memories:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch memories',
+    });
+  }
+};
 
 async function generatePersonalizedSuggestions(
   memoryData: UserMemory,

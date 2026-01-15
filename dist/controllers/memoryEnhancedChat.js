@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendMemoryEnhancedMessage = void 0;
+exports.getUserMemories = exports.sendMemoryEnhancedMessage = void 0;
 exports.invalidateMemoryCacheForUser = invalidateMemoryCacheForUser;
 const generative_ai_1 = require("@google/generative-ai");
 const ChatSession_1 = require("../models/ChatSession");
@@ -217,6 +217,21 @@ function buildSelectiveMemorySnippet(memoryData, intent) {
     if (!memoryData)
         return '';
     const parts = [];
+    // Include long-term memories (stored facts from previous conversations)
+    const facts = memoryData.facts || [];
+    if (facts.length > 0) {
+        // Group facts by type and select most important ones
+        const importantFacts = facts
+            .filter(f => f.importance >= 6) // Only high-importance facts
+            .slice(0, 10) // Top 10 most important
+            .map(f => {
+            const typeLabel = f.type.replace('_', ' ');
+            return `- ${typeLabel}: ${f.content}`;
+        });
+        if (importantFacts.length > 0) {
+            parts.push(`**Important things to remember about this person:**\n${importantFacts.join('\n')}`);
+        }
+    }
     // Stable profile facts (small)
     const prefs = memoryData.profile?.preferences || {};
     const goals = (memoryData.profile?.goals || []).slice(0, 3);
@@ -278,6 +293,7 @@ function getEmptyMemory() {
         moodPatterns: [],
         therapySessions: [],
         insights: [],
+        facts: [],
         lastUpdated: new Date(),
     };
 }
@@ -731,14 +747,31 @@ const sendMemoryEnhancedMessage = async (req, res) => {
         }
         // Extract key facts from ALL messages for persistent memory (async, don't block)
         // This uses the full message history, not the truncated version
-        if (allCurrentSessionMessages.length > 10) {
-            const keyFacts = (0, conversationOptimizer_1.extractKeyFacts)(allCurrentSessionMessages, 10); // Use ALL messages for fact extraction
+        // Extract facts more aggressively - start after just 5 messages
+        if (allCurrentSessionMessages.length >= 5) {
+            // Extract more facts for longer conversations
+            const factLimit = allCurrentSessionMessages.length > 20 ? 15 : 10;
+            const keyFacts = (0, conversationOptimizer_1.extractKeyFacts)(allCurrentSessionMessages, factLimit);
             if (keyFacts.length > 0) {
+                logger_1.logger.info(`Extracted ${keyFacts.length} key facts from conversation`);
                 // Store key facts asynchronously (don't wait for completion)
                 storeKeyFacts(userId, keyFacts).catch((error) => {
                     logger_1.logger.warn('Failed to store key facts:', error.message);
                 });
             }
+        }
+        // Also extract from individual messages with important keywords
+        // Check the current message for immediate facts
+        const currentMessageFacts = (0, conversationOptimizer_1.extractKeyFacts)([{
+                role: 'user',
+                content: message,
+                timestamp: new Date(),
+            }], 3);
+        if (currentMessageFacts.length > 0) {
+            logger_1.logger.info(`Extracted ${currentMessageFacts.length} immediate facts from current message`);
+            storeKeyFacts(userId, currentMessageFacts).catch((error) => {
+                logger_1.logger.warn('Failed to store immediate key facts:', error.message);
+            });
         }
         // Format current conversation for AI prompt (truncated/summarized version)
         const currentConversationFormatted = (0, conversationOptimizer_1.formatConversationWithSummary)(oldMessagesSummary, recentMessages);
@@ -989,6 +1022,20 @@ async function gatherUserMemory(userId) {
             .sort({ startTime: -1 })
             .limit(5)
             .lean();
+        // Get long-term memories (stored facts from previous conversations)
+        const longTermMemories = await LongTermMemory_1.LongTermMemoryModel.find({ userId: userIdObj })
+            .sort({ importance: -1, timestamp: -1 })
+            .limit(50) // Get top 50 most important memories
+            .lean();
+        // Convert to facts format
+        const facts = longTermMemories.map((mem) => ({
+            type: mem.type,
+            content: mem.content,
+            importance: mem.importance,
+            tags: mem.tags || [],
+            context: mem.context,
+            timestamp: mem.timestamp || mem.createdAt,
+        }));
         // Fetch actual user profile from database
         let userProfile = null;
         try {
@@ -1011,6 +1058,7 @@ async function gatherUserMemory(userId) {
             },
             experienceLevel: userProfile?.experienceLevel || 'beginner',
         };
+        logger_1.logger.info(`Loaded ${facts.length} long-term memories for user ${userId}`);
         return {
             profile: profileData,
             journalEntries,
@@ -1018,6 +1066,7 @@ async function gatherUserMemory(userId) {
             moodPatterns,
             therapySessions,
             insights: [],
+            facts,
             lastUpdated: new Date(),
         };
     }
@@ -1042,10 +1091,53 @@ async function gatherUserMemory(userId) {
             moodPatterns: [],
             therapySessions: [],
             insights: [],
+            facts: [],
             lastUpdated: new Date(),
         };
     }
 }
+/**
+ * Get user's stored LongTermMemory facts
+ * Endpoint: GET /memory-enhanced-chat/memories
+ */
+const getUserMemories = async (req, res) => {
+    try {
+        const userId = req.userId;
+        if (!userId) {
+            return res.status(401).json({ success: false, error: 'Unauthorized' });
+        }
+        const userIdObj = new mongoose_1.Types.ObjectId(userId);
+        // Get long-term memories (stored facts from previous conversations)
+        const longTermMemories = await LongTermMemory_1.LongTermMemoryModel.find({ userId: userIdObj })
+            .sort({ importance: -1, timestamp: -1 })
+            .limit(50) // Get top 50 most important memories
+            .lean();
+        // Convert to response format
+        const facts = longTermMemories.map((mem) => ({
+            id: mem._id.toString(),
+            type: mem.type,
+            content: mem.content,
+            importance: mem.importance,
+            tags: mem.tags || [],
+            context: mem.context,
+            timestamp: mem.timestamp || mem.createdAt,
+            createdAt: mem.createdAt,
+        }));
+        res.json({
+            success: true,
+            data: facts,
+            count: facts.length,
+        });
+    }
+    catch (error) {
+        logger_1.logger.error('Error fetching user memories:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch memories',
+        });
+    }
+};
+exports.getUserMemories = getUserMemories;
 async function generatePersonalizedSuggestions(memoryData, userMessage, aiResponse) {
     const suggestions = [];
     // Mood-based suggestions
