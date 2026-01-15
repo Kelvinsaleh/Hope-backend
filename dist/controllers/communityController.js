@@ -143,22 +143,18 @@ const createPost = async (req, res) => {
     try {
         const userId = new mongoose_1.Types.ObjectId(req.user._id);
         let { spaceId, content, mood, isAnonymous, images, videos } = req.body;
-        // Validate spaceId
-        if (!spaceId || spaceId.trim() === '') {
-            return res.status(400).json({
-                success: false,
-                error: 'spaceId is required'
-            });
-        }
-        // Convert spaceId to ObjectId
-        try {
-            spaceId = new mongoose_1.Types.ObjectId(spaceId);
-        }
-        catch (error) {
-            return res.status(400).json({
-                success: false,
-                error: 'Invalid spaceId format'
-            });
+        // SpaceId is now optional - convert to ObjectId if provided
+        let spaceObjectId;
+        if (spaceId && spaceId.trim() !== '') {
+            try {
+                spaceObjectId = new mongoose_1.Types.ObjectId(spaceId);
+            }
+            catch (error) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Invalid spaceId format'
+                });
+            }
         }
         // Post creation is free for all users
         // AI reflection generation is premium-only (checked later)
@@ -209,7 +205,7 @@ const createPost = async (req, res) => {
         }
         const post = new Community_1.CommunityPost({
             userId,
-            spaceId,
+            spaceId: spaceObjectId, // Now optional - can be undefined
             content,
             mood,
             isAnonymous: isAnonymous || false,
@@ -417,32 +413,61 @@ const createComment = async (req, res) => {
             $push: { comments: comment._id }
         });
         await comment.populate('userId', 'name');
+        const { createNotification } = await Promise.resolve().then(() => __importStar(require('./notificationController')));
         // Create notification for post owner (if not self-comment)
         const postOwnerId = post.userId;
-        if (postOwnerId && !postOwnerId._id.equals(userId)) {
-            const { createNotification } = await Promise.resolve().then(() => __importStar(require('./notificationController')));
+        let parentCommentOwnerId = null;
+        // If replying to a comment, get parent comment and notify the comment owner
+        if (parentCommentId) {
+            const parentComment = await Community_1.CommunityComment.findById(parentCommentId).populate('userId', 'name');
+            if (parentComment) {
+                parentCommentOwnerId = parentComment.userId;
+                if (parentCommentOwnerId && !parentCommentOwnerId._id.equals(userId)) {
+                    // Notify parent comment owner about the reply
+                    await createNotification({
+                        userId: parentCommentOwnerId._id,
+                        type: 'reply',
+                        actorId: userId,
+                        relatedPostId: post._id,
+                        relatedCommentId: parentComment._id,
+                    });
+                }
+            }
+        }
+        // Notify post owner only if it's not a reply (replies already notify parent comment owner above)
+        if (postOwnerId && !postOwnerId._id.equals(userId) && !parentCommentId) {
             await createNotification({
                 userId: postOwnerId._id,
-                type: parentCommentId ? 'reply' : 'comment',
+                type: 'comment',
                 actorId: userId,
                 relatedPostId: post._id,
-                relatedCommentId: parentCommentId ? new mongoose_1.Types.ObjectId(parentCommentId) : comment._id,
+                relatedCommentId: comment._id,
             });
-            // If replying to a comment, notify the comment owner too
-            if (parentCommentId) {
-                const parentComment = await Community_1.CommunityComment.findById(parentCommentId).populate('userId', 'name');
-                if (parentComment) {
-                    const parentCommentOwnerId = parentComment.userId;
-                    if (parentCommentOwnerId && !parentCommentOwnerId._id.equals(userId) && !parentCommentOwnerId._id.equals(postOwnerId._id)) {
+        }
+        // Parse @mentions in content and create mention notifications
+        // Format: @username at the start of content
+        const mentionRegex = /^@(\w+)\s+/;
+        const mentionMatch = content.match(mentionRegex);
+        if (mentionMatch) {
+            const mentionedUsername = mentionMatch[1];
+            try {
+                const mentionedUser = await User_1.User.findOne({ name: mentionedUsername }).lean();
+                if (mentionedUser && !mentionedUser._id.equals(userId)) {
+                    // Don't create duplicate notification if we already created a reply notification for this user
+                    if (!parentCommentOwnerId || !mentionedUser._id.equals(parentCommentOwnerId._id)) {
                         await createNotification({
-                            userId: parentCommentOwnerId._id,
-                            type: 'reply',
+                            userId: mentionedUser._id,
+                            type: 'mention',
                             actorId: userId,
                             relatedPostId: post._id,
-                            relatedCommentId: parentComment._id,
+                            relatedCommentId: comment._id,
                         });
                     }
                 }
+            }
+            catch (err) {
+                // If user lookup fails, continue without mention notification
+                logger_1.logger.warn(`Failed to find mentioned user: ${mentionedUsername}`, err);
             }
         }
         res.status(201).json({

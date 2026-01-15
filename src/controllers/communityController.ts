@@ -125,22 +125,17 @@ export const createPost = async (req: Request, res: Response) => {
     const userId = new Types.ObjectId(req.user._id);
     let { spaceId, content, mood, isAnonymous, images, videos } = req.body;
     
-    // Validate spaceId
-    if (!spaceId || spaceId.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        error: 'spaceId is required'
-      });
-    }
-    
-    // Convert spaceId to ObjectId
-    try {
-      spaceId = new Types.ObjectId(spaceId);
-    } catch (error) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid spaceId format'
-      });
+    // SpaceId is now optional - convert to ObjectId if provided
+    let spaceObjectId: Types.ObjectId | undefined;
+    if (spaceId && spaceId.trim() !== '') {
+      try {
+        spaceObjectId = new Types.ObjectId(spaceId);
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid spaceId format'
+        });
+      }
     }
     
     // Post creation is free for all users
@@ -198,7 +193,7 @@ export const createPost = async (req: Request, res: Response) => {
     
     const post = new CommunityPost({
       userId,
-      spaceId,
+      spaceId: spaceObjectId, // Now optional - can be undefined
       content,
       mood,
       isAnonymous: isAnonymous || false,
@@ -433,33 +428,64 @@ export const createComment = async (req: Request, res: Response) => {
     
     await comment.populate('userId', 'name');
     
+    const { createNotification } = await import('./notificationController');
+    
     // Create notification for post owner (if not self-comment)
     const postOwnerId = post.userId as any;
-    if (postOwnerId && !postOwnerId._id.equals(userId)) {
-      const { createNotification } = await import('./notificationController');
+    let parentCommentOwnerId: any = null;
+    
+    // If replying to a comment, get parent comment and notify the comment owner
+    if (parentCommentId) {
+      const parentComment = await CommunityComment.findById(parentCommentId).populate('userId', 'name');
+      if (parentComment) {
+        parentCommentOwnerId = parentComment.userId as any;
+        if (parentCommentOwnerId && !parentCommentOwnerId._id.equals(userId)) {
+          // Notify parent comment owner about the reply
+          await createNotification({
+            userId: parentCommentOwnerId._id,
+            type: 'reply',
+            actorId: userId,
+            relatedPostId: post._id as Types.ObjectId,
+            relatedCommentId: parentComment._id as Types.ObjectId,
+          });
+        }
+      }
+    }
+    
+    // Notify post owner only if it's not a reply (replies already notify parent comment owner above)
+    if (postOwnerId && !postOwnerId._id.equals(userId) && !parentCommentId) {
       await createNotification({
         userId: postOwnerId._id,
-        type: parentCommentId ? 'reply' : 'comment',
+        type: 'comment',
         actorId: userId,
         relatedPostId: post._id as Types.ObjectId,
-        relatedCommentId: parentCommentId ? new Types.ObjectId(parentCommentId) : comment._id as Types.ObjectId,
+        relatedCommentId: comment._id as Types.ObjectId,
       });
-      
-      // If replying to a comment, notify the comment owner too
-      if (parentCommentId) {
-        const parentComment = await CommunityComment.findById(parentCommentId).populate('userId', 'name');
-        if (parentComment) {
-          const parentCommentOwnerId = parentComment.userId as any;
-          if (parentCommentOwnerId && !parentCommentOwnerId._id.equals(userId) && !parentCommentOwnerId._id.equals(postOwnerId._id)) {
+    }
+    
+    // Parse @mentions in content and create mention notifications
+    // Format: @username at the start of content
+    const mentionRegex = /^@(\w+)\s+/;
+    const mentionMatch = content.match(mentionRegex);
+    if (mentionMatch) {
+      const mentionedUsername = mentionMatch[1];
+      try {
+        const mentionedUser = await User.findOne({ name: mentionedUsername }).lean() as any;
+        if (mentionedUser && !mentionedUser._id.equals(userId)) {
+          // Don't create duplicate notification if we already created a reply notification for this user
+          if (!parentCommentOwnerId || !mentionedUser._id.equals(parentCommentOwnerId._id)) {
             await createNotification({
-              userId: parentCommentOwnerId._id,
-              type: 'reply',
+              userId: mentionedUser._id,
+              type: 'mention',
               actorId: userId,
               relatedPostId: post._id as Types.ObjectId,
-              relatedCommentId: parentComment._id as Types.ObjectId,
+              relatedCommentId: comment._id as Types.ObjectId,
             });
           }
         }
+      } catch (err) {
+        // If user lookup fails, continue without mention notification
+        logger.warn(`Failed to find mentioned user: ${mentionedUsername}`, err);
       }
     }
     
