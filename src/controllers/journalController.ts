@@ -3,6 +3,7 @@ import { JournalEntry } from "../models/JournalEntry";
 import { Types } from "mongoose";
 import { logger } from "../utils/logger";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { LongTermMemoryModel } from "../models/LongTermMemory";
 
 // Initialize Gemini API - optional
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
@@ -173,11 +174,20 @@ export const createJournalEntry = async (req: Request, res: Response) => {
     }];
 
     extractKeyFacts(journalMessages, 5)
-      .then((keyFacts) => {
+      .then((keyFacts: Array<{
+        type: 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference';
+        content: string;
+        importance: number;
+        tags: string[];
+        context?: string;
+      }>) => {
         if (keyFacts.length > 0) {
           logger.info(`Extracted ${keyFacts.length} key facts from journal entry`);
           // Store key facts asynchronously
-          return storeKeyFactsFromJournal(userId.toString(), keyFacts, journalEntry._id.toString());
+          const journalEntryId = (journalEntry._id as Types.ObjectId)?.toString() || '';
+          if (journalEntryId) {
+            return storeKeyFactsFromJournal(userId.toString(), keyFacts, journalEntryId);
+          }
         }
       })
       .catch((error: any) => {

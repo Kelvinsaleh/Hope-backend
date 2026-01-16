@@ -16,10 +16,10 @@ async function getAccessTier(userId: Types.ObjectId): Promise<AccessTier> {
     userId,
     status: { $in: ["active", "trialing"] },
     expiresAt: { $gt: now },
-  }).lean();
+  }).lean() as any;
 
   if (sub) {
-    if (sub.planId === "trial" || sub.status === "trialing" || sub.trialEndsAt) {
+    if ((sub as any).planId === "trial" || (sub as any).status === "trialing" || (sub as any).trialEndsAt) {
       return "trial";
     }
     return "premium";
@@ -117,7 +117,8 @@ export async function enforceJournalWeeklyLimit(req: Request, res: Response, nex
 export async function enforceMeditationMonthlyLimit(req: Request, res: Response, next: NextFunction) {
   try {
     const userId = new Types.ObjectId(req.user._id);
-    if (await isPremiumUser(userId)) return next();
+    const tier = await getAccessTier(userId);
+    if (tier === "premium") return next();
 
     const startOfMonth = new Date();
     startOfMonth.setDate(1);

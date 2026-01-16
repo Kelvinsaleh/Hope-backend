@@ -383,10 +383,10 @@ export const startFreeTrial = async (req: Request, res: Response) => {
         { status: 'trialing' },
         { trialEndsAt: { $exists: true } },
       ],
-    }).sort({ createdAt: -1 }).lean();
+    }).sort({ createdAt: -1 }).lean() as any;
 
     if (lastTrialSub) {
-      const lastTrialEnd = lastTrialSub.trialEndsAt || lastTrialSub.expiresAt || lastTrialSub.createdAt;
+      const lastTrialEnd = (lastTrialSub as any).trialEndsAt || (lastTrialSub as any).expiresAt || (lastTrialSub as any).createdAt;
       if (TRIAL_COOLDOWN_DAYS > 0 && lastTrialEnd) {
         const cooldownEndsAt = new Date(lastTrialEnd);
         cooldownEndsAt.setDate(cooldownEndsAt.getDate() + TRIAL_COOLDOWN_DAYS);
