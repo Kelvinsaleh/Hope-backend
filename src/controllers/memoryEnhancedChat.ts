@@ -72,13 +72,15 @@ interface UserMemory {
     interests?: string[];
     experienceLevel?: 'beginner' | 'intermediate' | 'experienced';
   };
-  journalEntries: any[];
+  journalEntries: any[]; // Deprecated - kept for compatibility, should be empty
+  journalCount?: number; // Count of journal entries (for context only)
+  journalThemes?: string[]; // Extracted themes from journals (not full content)
   meditationHistory: any[];
   moodPatterns: any[];
   therapySessions: any[];
   insights: any[];
   facts: Array<{
-    type: 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference';
+    type: 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference' | 'user_summary';
     content: string;
     importance: number;
     tags: string[];
@@ -300,12 +302,34 @@ function buildSelectiveMemorySnippet(memoryData: UserMemory, intent: ChatIntent)
 
   const parts: string[] = [];
 
-  // Include long-term memories (stored facts from previous conversations)
+  // Include user summary first (most comprehensive)
   const facts = memoryData.facts || [];
-  if (facts.length > 0) {
-    // Group facts by type and select most important ones
+  // Check for legacy 'user_summary' fact. Otherwise,
+  // if you want to interpret an 'insight' fact as the user summary,
+  // do it based only on its content/tags (because 'isSummary' is not typed).
+  let userSummary = facts.find(f => f.type === 'user_summary');
+  if (!userSummary) {
+    // Try to heuristically detect an insight that appears to be a summary.
+    userSummary = facts.find(
+      f =>
+        f.type === 'insight' &&
+        (
+          typeof f.content === 'string' &&
+          (
+            f.content.toLowerCase().includes('summary') ||
+            (Array.isArray(f.tags) && f.tags.some(t => t.toLowerCase().includes('summary')))
+          )
+        )
+    );
+  }
+
+  if (userSummary) {
+    // User summary is the primary memory - always include it
+    parts.push(`**About this user (AI-generated summary):**\n${userSummary.content}`);
+  } else if (facts.length > 0) {
+    // Fallback: If no summary exists, use important facts
     const importantFacts = facts
-      .filter(f => f.importance >= 6) // Only high-importance facts
+      .filter(f => f.type !== 'user_summary' && f.importance >= 6) // Only high-importance facts, exclude summary
       .slice(0, 10) // Top 10 most important
       .map(f => {
         const typeLabel = f.type.replace('_', ' ');
@@ -752,8 +776,18 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
         const ids = recentJournalIds.map(id => Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : null).filter(Boolean);
         if (ids.length > 0) {
           const entries = await JournalEntry.find({ _id: { $in: ids }, userId: userIdObj }).lean();
-          // Replace memoryData.journalEntries with fetched entries
-          memoryData.journalEntries = entries;
+          // DO NOT replace journalEntries with full content - only extract themes
+          // Full journal content should not be in memory, only extracted summaries
+          const extractedThemes = entries
+            .flatMap((entry: any) => [
+              ...(entry.keyThemes || []),
+              ...(entry.insights || []),
+            ])
+            .filter(Boolean)
+            .slice(0, 5);
+          (memoryData as any).journalThemes = extractedThemes;
+          (memoryData as any).journalCount = entries.length;
+          memoryData.journalEntries = []; // Keep empty - full content not in memory
         }
       } catch (e) {
         logger.warn('Failed to fetch incremental journal entries', e);
@@ -885,34 +919,58 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
       }
     }
 
-    // Extract key facts from ALL messages for persistent memory (async, don't block)
+    // Generate or update user summary from ALL messages (async, don't block)
     // This uses the full message history, not the truncated version
+    // Generate summary after accumulating enough conversation (10+ messages)
+    if (allCurrentSessionMessages.length >= 10) {
+      // Get existing user summary to update it
+      const userIdObj = new Types.ObjectId(userId);
+      const existingSummary = await LongTermMemoryModel.findOne({
+        userId: userIdObj,
+        type: 'user_summary',
+      }).lean();
+
+      // AI-powered summary generation (async) - don't block response
+      const { generateUserSummary } = require('../utils/conversationOptimizer');
+      generateUserSummary(
+        allCurrentSessionMessages,
+        existingSummary?.content
+      )
+        .then((summary: {
+          type: 'user_summary';
+          content: string;
+          importance: number;
+          tags: string[];
+          context?: string;
+        } | null) => {
+          if (summary) {
+            logger.info('AI generated user summary from conversation');
+            // Store or update user summary asynchronously
+            return storeUserSummary(userId, summary, existingSummary?._id?.toString());
+          }
+        })
+        .catch((error: any) => {
+          logger.warn('Failed to generate/store user summary:', error.message);
+        });
+    }
+    
+    // Also extract key facts for quick reference (in addition to summary)
     // Extract facts more aggressively - start after just 5 messages
     if (allCurrentSessionMessages.length >= 5) {
       // Extract more facts for longer conversations
       const factLimit = allCurrentSessionMessages.length > 20 ? 15 : 10;
-      const keyFacts = extractKeyFacts(allCurrentSessionMessages, factLimit);
-      if (keyFacts.length > 0) {
-        logger.info(`Extracted ${keyFacts.length} key facts from conversation`);
-        // Store key facts asynchronously (don't wait for completion)
-        storeKeyFacts(userId, keyFacts).catch((error: any) => {
-          logger.warn('Failed to store key facts:', error.message);
+      // AI-powered extraction (async) - don't block response
+      extractKeyFacts(allCurrentSessionMessages, factLimit)
+        .then((keyFacts) => {
+          if (keyFacts.length > 0) {
+            logger.info(`AI extracted ${keyFacts.length} key facts from conversation`);
+            // Store key facts asynchronously (don't wait for completion)
+            return storeKeyFacts(userId, keyFacts);
+          }
+        })
+        .catch((error: any) => {
+          logger.warn('Failed to extract/store key facts:', error.message);
         });
-      }
-    }
-    
-    // Also extract from individual messages with important keywords
-    // Check the current message for immediate facts
-    const currentMessageFacts = extractKeyFacts([{
-      role: 'user',
-      content: message,
-      timestamp: new Date(),
-    }], 3);
-    if (currentMessageFacts.length > 0) {
-      logger.info(`Extracted ${currentMessageFacts.length} immediate facts from current message`);
-      storeKeyFacts(userId, currentMessageFacts).catch((error: any) => {
-        logger.warn('Failed to store immediate key facts:', error.message);
-      });
     }
 
     // Format current conversation for AI prompt (truncated/summarized version)
@@ -1110,6 +1168,62 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
 };
 
 /**
+ * Store or update user summary generated by AI
+ * This creates a comprehensive summary about the user for future sessions
+ */
+async function storeUserSummary(
+  userId: string,
+  summary: {
+    type: 'user_summary';
+    content: string;
+    importance: number;
+    tags: string[];
+    context?: string;
+  },
+  existingSummaryId?: string
+): Promise<void> {
+  if (!summary || !summary.content) return;
+
+  try {
+    const userIdObj = new Types.ObjectId(userId);
+    
+    if (existingSummaryId) {
+      // Update existing summary
+      await LongTermMemoryModel.findByIdAndUpdate(
+        existingSummaryId,
+        {
+          content: summary.content,
+          importance: summary.importance,
+          tags: summary.tags,
+          context: summary.context,
+          timestamp: new Date(),
+        },
+        { new: true }
+      );
+      logger.info('Updated user summary');
+    } else {
+      // Create new summary
+      await LongTermMemoryModel.create({
+        userId: userIdObj,
+        type: 'user_summary',
+        content: summary.content,
+        importance: summary.importance,
+        tags: summary.tags,
+        context: summary.context,
+        timestamp: new Date(),
+      });
+      logger.info('Created new user summary');
+    }
+
+    // Invalidate memory cache
+    invalidateMemoryCacheForUser(userId);
+  } catch (error: any) {
+    logger.error('Error storing user summary:', error);
+    // Don't throw - this is non-critical
+  }
+}
+
+/**
  * Store key facts extracted from conversation into persistent memory
  * This enables the AI to "remember" important details across sessions
  */
@@ -1186,10 +1300,14 @@ async function gatherUserMemory(userId: string): Promise<UserMemory> {
     
     const userIdObj = new Types.ObjectId(userId);
     
-    // Get recent journal entries
-    const journalEntries = await JournalEntry.find({ userId: userIdObj })
+    // DO NOT include full journal entries in memory - only extracted summaries/facts
+    // Journal content is extracted into LongTermMemory facts when entries are created
+    // We only need metadata (count, recent themes) for context, not full content
+    const journalCount = await JournalEntry.countDocuments({ userId: userIdObj });
+    const recentJournalThemes = await JournalEntry.find({ userId: userIdObj })
       .sort({ createdAt: -1 })
-      .limit(10)
+      .limit(5)
+      .select('keyThemes insights emotionalState') // Only get extracted themes, not full content
       .lean();
 
     // Get recent mood data
@@ -1217,9 +1335,9 @@ async function gatherUserMemory(userId: string): Promise<UserMemory> {
       .limit(50) // Get top 50 most important memories
       .lean();
 
-    // Convert to facts format
+    // Convert to facts format (including user_summary type)
     const facts = longTermMemories.map((mem: any) => ({
-      type: mem.type,
+      type: mem.type as 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference' | 'user_summary',
       content: mem.content,
       importance: mem.importance,
       tags: mem.tags || [],
@@ -1252,13 +1370,24 @@ async function gatherUserMemory(userId: string): Promise<UserMemory> {
 
     logger.info(`Loaded ${facts.length} long-term memories for user ${userId}`);
 
+    // Extract journal themes/insights (not full content)
+    const journalThemes = recentJournalThemes
+      .flatMap((entry: any) => [
+        ...(entry.keyThemes || []),
+        ...(entry.insights || []),
+      ])
+      .filter(Boolean)
+      .slice(0, 5);
+
     return {
       profile: profileData,
-      journalEntries,
+      journalEntries: [], // Empty - full journal content not included in memory
+      journalCount, // Only count for context
+      journalThemes, // Only extracted themes, not full content
       meditationHistory,
       moodPatterns,
       therapySessions,
-      insights: [],
+      insights: journalThemes, // Use extracted themes as insights
       facts,
       lastUpdated: new Date(),
     };
@@ -1278,7 +1407,9 @@ async function gatherUserMemory(userId: string): Promise<UserMemory> {
         },
         experienceLevel: 'beginner',
       },
-      journalEntries: [],
+      journalEntries: [], // Empty - full journal content not included
+      journalCount: 0, // Only count for context
+      journalThemes: [], // Only extracted themes, not full content
       meditationHistory: [],
       moodPatterns: [],
       therapySessions: [],
@@ -1302,14 +1433,51 @@ export const getUserMemories = async (req: Request, res: Response) => {
 
     const userIdObj = new Types.ObjectId(userId);
     
-    // Get long-term memories (stored facts from previous conversations)
-    const longTermMemories = await LongTermMemoryModel.find({ userId: userIdObj })
+    // Get user summary first (most important)
+    const userSummary = await LongTermMemoryModel.findOne({
+      userId: userIdObj,
+      type: 'user_summary',
+    })
+      .sort({ timestamp: -1 })
+      .lean();
+
+    // Get other long-term memories (excluding summary)
+    const longTermMemories = await LongTermMemoryModel.find({
+      userId: userIdObj,
+      type: { $ne: 'user_summary' },
+    })
       .sort({ importance: -1, timestamp: -1 })
       .limit(50) // Get top 50 most important memories
       .lean();
 
-    // Convert to response format
-    const facts = longTermMemories.map((mem: any) => ({
+    // Convert to response format, with summary first
+    const facts: Array<{
+      id: string;
+      type: string;
+      content: string;
+      importance: number;
+      tags: string[];
+      context?: string;
+      timestamp: Date;
+      createdAt: Date;
+    }> = [];
+
+    // Add user summary first if it exists
+    if (userSummary) {
+      facts.push({
+        id: userSummary._id.toString(),
+        type: userSummary.type,
+        content: userSummary.content,
+        importance: userSummary.importance,
+        tags: userSummary.tags || [],
+        context: userSummary.context,
+        timestamp: userSummary.timestamp || userSummary.createdAt,
+        createdAt: userSummary.createdAt,
+      });
+    }
+
+    // Add other facts
+    facts.push(...longTermMemories.map((mem: any) => ({
       id: mem._id.toString(),
       type: mem.type,
       content: mem.content,
@@ -1318,7 +1486,7 @@ export const getUserMemories = async (req: Request, res: Response) => {
       context: mem.context,
       timestamp: mem.timestamp || mem.createdAt,
       createdAt: mem.createdAt,
-    }));
+    })));
 
     res.json({
       success: true,
@@ -1330,6 +1498,142 @@ export const getUserMemories = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch memories',
+    });
+  }
+};
+
+/**
+ * Update a LongTermMemory fact
+ * Endpoint: PUT /memory-enhanced-chat/memories/:memoryId
+ */
+export const updateMemory = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).userId;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const { memoryId } = req.params;
+    const { content, type, importance, tags, context } = req.body;
+
+    if (!memoryId || !Types.ObjectId.isValid(memoryId)) {
+      return res.status(400).json({ success: false, error: 'Invalid memory ID' });
+    }
+
+    const userIdObj = new Types.ObjectId(userId);
+    const memoryIdObj = new Types.ObjectId(memoryId);
+
+    // Verify the memory belongs to the user
+    const existingMemory = await LongTermMemoryModel.findOne({
+      _id: memoryIdObj,
+      userId: userIdObj,
+    });
+
+    if (!existingMemory) {
+      return res.status(404).json({ success: false, error: 'Memory not found' });
+    }
+
+    // Build update object
+    const update: any = {};
+    if (content !== undefined && typeof content === 'string' && content.trim()) {
+      update.content = content.trim();
+    }
+    if (type !== undefined && ['emotional_theme', 'coping_pattern', 'goal', 'trigger', 'insight', 'preference', 'user_summary'].includes(type)) {
+      update.type = type;
+    }
+    if (importance !== undefined && typeof importance === 'number' && importance >= 1 && importance <= 10) {
+      update.importance = importance;
+    }
+    if (tags !== undefined && Array.isArray(tags)) {
+      update.tags = tags.filter(t => typeof t === 'string');
+    }
+    if (context !== undefined) {
+      update.context = context;
+    }
+    update.timestamp = new Date(); // Update timestamp when modified
+
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ success: false, error: 'No valid fields to update' });
+    }
+
+    // Update the memory
+    const updatedMemory = await LongTermMemoryModel.findByIdAndUpdate(
+      memoryIdObj,
+      { $set: update },
+      { new: true }
+    ).lean();
+
+    if (!updatedMemory) {
+      return res.status(500).json({ success: false, error: 'Failed to update memory' });
+    }
+
+    // Invalidate memory cache
+    invalidateMemoryCacheForUser(userId);
+
+    res.json({
+      success: true,
+      data: {
+        id: updatedMemory._id.toString(),
+        type: updatedMemory.type,
+        content: updatedMemory.content,
+        importance: updatedMemory.importance,
+        tags: updatedMemory.tags || [],
+        context: updatedMemory.context,
+        timestamp: updatedMemory.timestamp || updatedMemory.createdAt,
+        createdAt: updatedMemory.createdAt,
+      },
+    });
+  } catch (error: any) {
+    logger.error('Error updating memory:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update memory',
+    });
+  }
+};
+
+/**
+ * Delete a LongTermMemory fact
+ * Endpoint: DELETE /memory-enhanced-chat/memories/:memoryId
+ */
+export const deleteMemory = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).userId;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const { memoryId } = req.params;
+
+    if (!memoryId || !Types.ObjectId.isValid(memoryId)) {
+      return res.status(400).json({ success: false, error: 'Invalid memory ID' });
+    }
+
+    const userIdObj = new Types.ObjectId(userId);
+    const memoryIdObj = new Types.ObjectId(memoryId);
+
+    // Verify the memory belongs to the user and delete it
+    const deletedMemory = await LongTermMemoryModel.findOneAndDelete({
+      _id: memoryIdObj,
+      userId: userIdObj,
+    });
+
+    if (!deletedMemory) {
+      return res.status(404).json({ success: false, error: 'Memory not found' });
+    }
+
+    // Invalidate memory cache
+    invalidateMemoryCacheForUser(userId);
+
+    res.json({
+      success: true,
+      message: 'Memory deleted successfully',
+    });
+  } catch (error: any) {
+    logger.error('Error deleting memory:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete memory',
     });
   }
 };
@@ -1351,7 +1655,8 @@ async function generatePersonalizedSuggestions(
   }
 
   // Journal-based suggestions
-  if (memoryData.journalEntries.length === 0) {
+  const journalCount = (memoryData as any).journalCount || memoryData.journalEntries?.length || 0;
+  if (journalCount === 0) {
     suggestions.push("Consider starting a daily journal to track your thoughts");
   }
 

@@ -2,7 +2,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface INotification extends Document {
   userId: mongoose.Types.ObjectId; // Recipient
-  type: 'like' | 'comment' | 'reply' | 'mention';
+  type: 'like' | 'comment' | 'reply' | 'mention' | 'billing';
   title: string;
   body: string;
   relatedPostId?: mongoose.Types.ObjectId;
@@ -20,6 +20,7 @@ export interface INotificationPreferences extends Document {
   enableComments: boolean;
   enableReplies: boolean;
   enableMentions: boolean;
+  enableBilling: boolean;
   batchNotifications: boolean;
   batchTime: string; // Time of day to send daily summary (e.g., "18:00")
   createdAt: Date;
@@ -44,7 +45,7 @@ const NotificationSchema = new Schema<INotification>({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   type: { 
     type: String, 
-    enum: ['like', 'comment', 'reply', 'mention'], 
+    enum: ['like', 'comment', 'reply', 'mention', 'billing'], 
     required: true,
     index: true
   },
@@ -65,7 +66,8 @@ const NotificationPreferencesSchema = new Schema<INotificationPreferences>({
   enableComments: { type: Boolean, default: true },
   enableReplies: { type: Boolean, default: true },
   enableMentions: { type: Boolean, default: true },
-  batchNotifications: { type: Boolean, default: true },
+  batchNotifications: { type: Boolean, default: false },
+  enableBilling: { type: Boolean, default: true },
   batchTime: { type: String, default: '18:00' }, // Default 6 PM
 }, {
   timestamps: true

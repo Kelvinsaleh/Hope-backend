@@ -1,5 +1,5 @@
 import express from "express";
-import { sendMemoryEnhancedMessage, getUserMemories } from "../controllers/memoryEnhancedChat";
+import { sendMemoryEnhancedMessage, getUserMemories, updateMemory, deleteMemory } from "../controllers/memoryEnhancedChat";
 import { authenticateToken } from "../middleware/auth";
 import { enforceChatDailyLimit } from "../middleware/premiumLimits";
 import { aiChatRateLimiter } from "../middleware/rateLimiter";
@@ -14,5 +14,11 @@ router.post("/", enforceChatDailyLimit, aiChatRateLimiter.middleware(), sendMemo
 
 // Get user's stored memories (LongTermMemory facts)
 router.get("/memories", getUserMemories);
+
+// Update a memory
+router.put("/memories/:memoryId", updateMemory);
+
+// Delete a memory
+router.delete("/memories/:memoryId", deleteMemory);
 
 export default router;

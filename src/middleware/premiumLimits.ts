@@ -6,35 +6,71 @@ import { ChatSession } from "../models/ChatSession";
 import { JournalEntry } from "../models/JournalEntry";
 import { MeditationSession } from "../models/Meditation";
 
-async function isPremiumUser(userId: Types.ObjectId): Promise<boolean> {
+type AccessTier = "premium" | "trial" | "free";
+
+async function getAccessTier(userId: Types.ObjectId): Promise<AccessTier> {
+  const now = new Date();
+
   // Prefer Subscription model if available
   const sub = await Subscription.findOne({
     userId,
-    status: "active",
-    expiresAt: { $gt: new Date() },
+    status: { $in: ["active", "trialing"] },
+    expiresAt: { $gt: now },
   }).lean();
-  if (sub) return true;
 
-  // Fallback to User.subscription field
-  const user = await User.findById(userId).lean();
-  if (user?.subscription?.isActive && user.subscription.tier === "premium") return true;
-
-  // Check if user has an active trial
-  if (user?.trialEndsAt) {
-    const now = new Date();
-    if (now < new Date(user.trialEndsAt)) {
-      return true; // User has an active trial
+  if (sub) {
+    if (sub.planId === "trial" || sub.status === "trialing" || sub.trialEndsAt) {
+      return "trial";
     }
+    return "premium";
   }
 
-  return false;
+  // Fallback to User document
+  const user = await User.findById(userId).lean();
+  if (user?.trialEndsAt && now < new Date(user.trialEndsAt)) {
+    return "trial";
+  }
+  if (user?.subscription?.isActive && user.subscription.tier === "premium") {
+    return "premium";
+  }
+
+  return "free";
 }
 
 // Free tier: 150 messages per month (can use anytime until exhausted)
 export async function enforceChatMonthlyLimit(req: Request, res: Response, next: NextFunction) {
   try {
     const userId = new Types.ObjectId(req.user._id);
-    if (await isPremiumUser(userId)) return next();
+    const tier = await getAccessTier(userId);
+    if (tier === "premium") return next();
+
+    // Trial: daily cap to control high-cost usage during trial
+    if (tier === "trial") {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const sessions = await ChatSession.aggregate([
+        { $match: { userId } },
+        { $unwind: "$messages" },
+        { $match: { "messages.timestamp": { $gte: startOfDay }, "messages.role": "user" } },
+        { $count: "count" },
+      ]);
+
+      const DAILY_TRIAL_LIMIT = 50;
+      const dailyCount = sessions?.[0]?.count || 0;
+
+      if (dailyCount >= DAILY_TRIAL_LIMIT) {
+        return res.status(429).json({
+          success: false,
+          error: "Daily message limit reached for trial users (50 messages/day). Upgrade to Premium for unlimited messages.",
+          limits: { dailyMessages: DAILY_TRIAL_LIMIT, tier: "trial" },
+          remaining: 0,
+        });
+      }
+
+      // If under daily cap, allow without further monthly checks
+      return next();
+    }
 
     const startOfMonth = new Date();
     startOfMonth.setDate(1);

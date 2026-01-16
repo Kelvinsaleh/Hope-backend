@@ -18,6 +18,27 @@ function computeExpiryDate(planId: string, from: Date = new Date()): Date {
 }
 
 async function processTrialTransitions(now: Date) {
+  // Notify trials ending within 48 hours
+  const soon = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+  const trialsEndingSoon = await Subscription.find({
+    status: "trialing",
+    trialEndsAt: { $gt: now, $lte: soon }
+  }).limit(200);
+
+  for (const trial of trialsEndingSoon) {
+    try {
+      const { createNotification } = await import("../controllers/notificationController");
+      await createNotification({
+        userId: new Types.ObjectId(trial.userId),
+        actorId: new Types.ObjectId(trial.userId),
+        type: "billing",
+        metadata: { message: "Your trial ends soon. Upgrade to keep premium active." }
+      });
+    } catch (err) {
+      logger.warn("Failed to send trial-ending notification", err);
+    }
+  }
+
   const trials = await Subscription.find({
     status: "trialing",
     trialEndsAt: { $lte: now }

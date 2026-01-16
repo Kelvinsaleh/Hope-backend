@@ -284,6 +284,20 @@ export const verifyPayment = async (req: Request, res: Response) => {
 
     logger.info(`Payment verified and user ${userId} upgraded to premium`);
 
+    // Notify user about payment success
+    try {
+      const { createNotification } = await import('./notificationController');
+      const oid = new (require('mongoose').Types.ObjectId)(userId);
+      await createNotification({
+        userId: oid,
+        actorId: oid,
+        type: 'billing',
+        metadata: { message: `Payment verified for ${planId} plan. Premium active until ${expiresAt.toDateString()}.` },
+      });
+    } catch (notifyErr) {
+      logger.warn('Payment notification failed:', notifyErr);
+    }
+
     res.json({
       success: true,
       message: "Payment verified successfully",
@@ -393,8 +407,33 @@ export const createPaystackSubscription = async (req: Request, res: Response) =>
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ success: false, error: 'User not found' });
 
-    const trialEligible = !(user as any)?.trialUsed;
     const now = new Date();
+    const trialCooldownDays = Number(process.env.PREMIUM_TRIAL_COOLDOWN_DAYS || 90);
+
+    const lastTrialSub = await Subscription.findOne({
+      userId,
+      $or: [
+        { planId: 'trial' },
+        { status: 'trialing' },
+        { trialEndsAt: { $exists: true } },
+      ],
+    }).sort({ createdAt: -1 }).lean();
+
+    let trialEligible = !(user as any)?.trialUsed;
+
+    if (lastTrialSub) {
+      const lastTrialEnd = lastTrialSub.trialEndsAt || lastTrialSub.expiresAt || lastTrialSub.createdAt;
+      if (trialCooldownDays > 0 && lastTrialEnd) {
+        const cooldownEndsAt = new Date(lastTrialEnd);
+        cooldownEndsAt.setDate(cooldownEndsAt.getDate() + trialCooldownDays);
+        if (now < cooldownEndsAt) {
+          trialEligible = false;
+        }
+      } else {
+        trialEligible = false;
+      }
+    }
+
     const trialEndsAt = trialEligible ? computeExpiry('trial', now) : null;
 
     // Ensure Paystack customer exists (search by email)

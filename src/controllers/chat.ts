@@ -1,6 +1,28 @@
 import { Request, Response } from "express";
 import { ChatSession, IChatMessage } from "../models/ChatSession";
 import { Types } from "mongoose";
+// Simple in-memory cache for sessions to reduce repeated DB hits per user
+const sessionsCache: Map<string, { data: any; expiresAt: number }> = new Map();
+const SESSIONS_CACHE_TTL_MS = 30_000; // 30 seconds
+
+function getCachedSessions(userId: string) {
+  const cached = sessionsCache.get(userId);
+  if (!cached) return null;
+  if (Date.now() > cached.expiresAt) {
+    sessionsCache.delete(userId);
+    return null;
+  }
+  return cached.data;
+}
+
+function setCachedSessions(userId: string, data: any) {
+  sessionsCache.set(userId, { data, expiresAt: Date.now() + SESSIONS_CACHE_TTL_MS });
+}
+
+function invalidateSessionsCache(userId: string) {
+  sessionsCache.delete(userId);
+}
+
 import { logger } from "../utils/logger";
 import { buildHopePrompt, normalizeMood } from "../utils/hopePersonality";
 import { generateChatTitle, shouldGenerateTitle } from "../utils/chatTitleGenerator";
@@ -343,6 +365,16 @@ export const getAllChatSessions = async (req: Request, res: Response) => {
   try {
     const userId = new Types.ObjectId(req.user._id);
 
+    // Serve from cache if fresh
+    const cached = getCachedSessions(userId.toString());
+    if (cached) {
+      return res.json({
+        success: true,
+        sessions: cached,
+        cached: true,
+      });
+    }
+
     // Fetch all sessions
     const allSessions = await ChatSession.find({ 
       userId 
@@ -401,6 +433,20 @@ export const getAllChatSessions = async (req: Request, res: Response) => {
         lastMessage: session.messages.length > 0 ? session.messages[session.messages.length - 1] : null
       }))
     });
+
+    // Cache the response
+    setCachedSessions(
+      userId.toString(),
+      sessionsWithMessages.map(session => ({
+        id: session.sessionId,
+        userId: session.userId.toString(),
+        title: session.title || null,
+        status: session.status,
+        startTime: session.startTime,
+        messageCount: session.messages.length,
+        lastMessage: session.messages.length > 0 ? session.messages[session.messages.length - 1] : null
+      }))
+    );
   } catch (error) {
     logger.error("Get all chat sessions error:", error);
     res.status(500).json({
@@ -434,6 +480,9 @@ export const completeChatSession = async (req: Request, res: Response) => {
     }
 
     logger.info(`Chat session completed: ${sessionId} for user: ${userId}`);
+
+    // Invalidate cache so next fetch is fresh
+    invalidateSessionsCache(userId.toString());
 
     res.json({
       success: true,

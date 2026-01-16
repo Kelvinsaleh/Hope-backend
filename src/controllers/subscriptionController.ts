@@ -5,6 +5,7 @@ import { Types } from "mongoose";
 import { logger } from "../utils/logger";
 
 const TRIAL_DAYS = Number(process.env.PREMIUM_TRIAL_DAYS || 7);
+const TRIAL_COOLDOWN_DAYS = Number(process.env.PREMIUM_TRIAL_COOLDOWN_DAYS || 90); // enforce one-time or long cooldown
 const PLAN_DURATION: Record<string, number> = {
   monthly: 30,
   annually: 365,
@@ -369,8 +370,38 @@ export const startFreeTrial = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'Trial already active', trialEndsAt: user.trialEndsAt });
     }
 
+    // Hard guard: once used, block unless cooldown explicitly allows
     if ((user as any).trialUsed) {
       return res.status(400).json({ success: false, error: 'Trial already used' });
+    }
+
+    // Check prior trial subscriptions for safety (even if trialUsed was reset elsewhere)
+    const lastTrialSub = await Subscription.findOne({
+      userId,
+      $or: [
+        { planId: 'trial' },
+        { status: 'trialing' },
+        { trialEndsAt: { $exists: true } },
+      ],
+    }).sort({ createdAt: -1 }).lean();
+
+    if (lastTrialSub) {
+      const lastTrialEnd = lastTrialSub.trialEndsAt || lastTrialSub.expiresAt || lastTrialSub.createdAt;
+      if (TRIAL_COOLDOWN_DAYS > 0 && lastTrialEnd) {
+        const cooldownEndsAt = new Date(lastTrialEnd);
+        cooldownEndsAt.setDate(cooldownEndsAt.getDate() + TRIAL_COOLDOWN_DAYS);
+        if (now < cooldownEndsAt) {
+          return res.status(400).json({
+            success: false,
+            error: 'Trial not eligible (cooldown)',
+            cooldownEndsAt,
+          });
+        }
+      }
+      // If no cooldown window is set, treat any prior trial as ineligible
+      if (TRIAL_COOLDOWN_DAYS <= 0) {
+        return res.status(400).json({ success: false, error: 'Trial already used' });
+      }
     }
 
     // Cancel any existing active subscriptions to avoid conflicts

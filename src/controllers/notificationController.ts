@@ -11,8 +11,8 @@ import { logger } from '../utils/logger';
  */
 export async function createNotification(params: {
   userId: Types.ObjectId; // Recipient
-  type: 'like' | 'comment' | 'reply' | 'mention';
-  actorId: Types.ObjectId; // User who triggered it
+  type: 'like' | 'comment' | 'reply' | 'mention' | 'billing';
+  actorId: Types.ObjectId; // User who triggered it (or system)
   relatedPostId?: Types.ObjectId;
   relatedCommentId?: Types.ObjectId;
   metadata?: Record<string, any>;
@@ -20,8 +20,8 @@ export async function createNotification(params: {
   try {
     const { userId, type, actorId, relatedPostId, relatedCommentId, metadata } = params;
 
-    // Don't notify yourself
-    if (userId.equals(actorId)) {
+    // Don't notify yourself for social events; allow for billing/system updates
+    if (userId.equals(actorId) && params.type !== 'billing') {
       return;
     }
 
@@ -35,7 +35,8 @@ export async function createNotification(params: {
         enableComments: true,
         enableReplies: true,
         enableMentions: true,
-        batchNotifications: true,
+        enableBilling: true,
+        batchNotifications: false, // default to real-time unless user opts into summaries
         batchTime: '18:00',
       });
       // Continue with notification creation (defaults are enabled)
@@ -45,10 +46,10 @@ export async function createNotification(params: {
       if (type === 'comment' && !preferences.enableComments) return;
       if (type === 'reply' && !preferences.enableReplies) return;
       if (type === 'mention' && !preferences.enableMentions) return;
+      if (type === 'billing' && preferences.enableBilling === false) return;
 
-      // If batch notifications are enabled, don't create individual notification
-      // Instead, it will be handled by the batch notification system
-      if (preferences.batchNotifications) {
+      // If user opted into summaries, only add to batch (no real-time) except billing.
+      if (preferences.batchNotifications && type !== 'billing') {
         await addToBatchNotification(userId, type, actorId, relatedPostId);
         return;
       }
@@ -56,9 +57,8 @@ export async function createNotification(params: {
 
     // Get actor info
     const actor = await User.findById(actorId).lean() as (Omit<IUser, keyof Document> & { _id: any }) | null;
-    if (!actor) return;
-
-    const actorName = actor.name || 'Someone';
+    // For billing/system messages, allow missing actor (use “System”)
+    const actorName = actor?.name || 'System';
 
     // Generate title and body based on type
     let title = '';
@@ -80,6 +80,10 @@ export async function createNotification(params: {
       case 'mention':
         title = 'You Were Mentioned';
         body = `${actorName} mentioned you in a post`;
+        break;
+      case 'billing':
+        title = 'Subscription Update';
+        body = (metadata && metadata.message) || 'Your subscription status changed.';
         break;
     }
 
@@ -389,7 +393,7 @@ export const getPreferences = async (req: Request, res: Response) => {
         enableComments: true,
         enableReplies: true,
         enableMentions: true,
-        batchNotifications: true,
+        batchNotifications: false,
         batchTime: '18:00',
       });
     }

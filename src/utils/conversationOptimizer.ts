@@ -13,6 +13,11 @@
  */
 
 import { logger } from "./logger";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+// Initialize Gemini for AI-powered fact extraction
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
+const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 // Configuration
 const MAX_TOKENS_FOR_HISTORY = 8000; // Max tokens for conversation history (leaving room for prompt + response)
@@ -194,10 +199,107 @@ export function formatConversationWithSummary(
 }
 
 /**
- * Extract key facts from messages for persistent memory
- * Returns facts that should be stored in LongTermMemory
+ * AI-powered extraction of key facts from conversation using Gemini
+ * This is context-aware and can identify important information even without explicit keywords
  */
-export function extractKeyFacts(
+export async function extractKeyFactsWithAI(
+  messages: Array<{ role: string; content: string; timestamp?: Date }>,
+  limit: number = 10
+): Promise<Array<{
+  type: 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference';
+  content: string;
+  importance: number;
+  tags: string[];
+  context?: string;
+}>> {
+  if (!genAI || messages.length === 0) {
+    return [];
+  }
+
+  try {
+    // Format conversation for AI analysis
+    const conversationText = messages
+      .filter(msg => msg.role === 'user' && msg.content)
+      .map(msg => `User: ${msg.content}`)
+      .join('\n\n');
+
+    if (!conversationText || conversationText.trim().length < 20) {
+      return [];
+    }
+
+    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+
+    const extractionPrompt = `Analyze the following therapy conversation and extract key facts that should be remembered about the user for future sessions. Focus on:
+
+1. **Goals** - What the user wants to achieve (e.g., "I want to reduce anxiety", "My goal is to sleep better")
+2. **Triggers** - What causes stress/anxiety/negative emotions (e.g., "Deadlines make me anxious", "I get stressed when...")
+3. **Insights** - Realizations or breakthroughs (e.g., "I realized that...", "I understand now that...")
+4. **Preferences** - Communication style, activities they like/dislike, preferences
+5. **Emotional Themes** - Recurring emotional patterns or states
+6. **Coping Patterns** - How the user typically responds to challenges (e.g., "I always...", "I tend to...")
+
+Return ONLY a valid JSON array of facts, each with this exact structure:
+{
+  "type": "goal" | "trigger" | "insight" | "preference" | "emotional_theme" | "coping_pattern",
+  "content": "A clear, concise fact (max 150 characters)",
+  "importance": 1-10 (higher = more important for future conversations),
+  "tags": ["relevant", "tags"],
+  "context": "optional brief context"
+}
+
+Extract the ${limit} most important facts. If no significant facts are present, return an empty array [].
+
+Conversation:
+${conversationText.substring(0, 8000)} // Limit input to avoid token issues
+
+Return ONLY the JSON array, no explanations.`;
+
+    const result = await model.generateContent(extractionPrompt);
+    const response = result.response;
+    const text = response.text();
+
+    // Extract JSON from response (may have markdown code blocks)
+    let jsonText = text.trim();
+    if (jsonText.startsWith('```json')) {
+      jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+    } else if (jsonText.startsWith('```')) {
+      jsonText = jsonText.replace(/```\n?/g, '').replace(/```\n?/g, '');
+    }
+
+    // Parse JSON response
+    const facts = JSON.parse(jsonText);
+
+    // Validate and normalize facts
+    if (!Array.isArray(facts)) {
+      logger.warn('AI extraction returned non-array result');
+      return [];
+    }
+
+    return facts
+      .filter((fact: any) => {
+        // Validate required fields
+        return fact.type && fact.content && typeof fact.importance === 'number';
+      })
+      .map((fact: any) => ({
+        type: fact.type as 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference',
+        content: fact.content.trim().substring(0, 200), // Limit content length
+        importance: Math.max(1, Math.min(10, fact.importance || 5)), // Clamp 1-10
+        tags: Array.isArray(fact.tags) ? fact.tags.slice(0, 5) : [],
+        context: fact.context?.toString() || undefined,
+      }))
+      .sort((a, b) => b.importance - a.importance)
+      .slice(0, limit);
+
+  } catch (error: any) {
+    logger.warn('AI-powered fact extraction failed, will fall back to keyword-based:', error.message);
+    return [];
+  }
+}
+
+/**
+ * Extract key facts from messages using keyword-based pattern matching (fallback method)
+ */
+function extractKeyFactsKeywordBased(
   messages: Array<{ role: string; content: string; timestamp?: Date }>,
   limit: number = 10
 ): Array<{
@@ -332,5 +434,113 @@ export function extractKeyFacts(
   return facts
     .sort((a, b) => b.importance - a.importance)
     .slice(0, limit);
+}
+
+/**
+ * Generate AI-powered summary about the user based on conversation history
+ * This creates a comprehensive summary rather than individual facts
+ */
+export async function generateUserSummary(
+  messages: Array<{ role: string; content: string; timestamp?: Date }>,
+  existingSummary?: string
+): Promise<{
+  type: 'user_summary';
+  content: string;
+  importance: number;
+  tags: string[];
+  context?: string;
+} | null> {
+  if (!genAI || messages.length === 0) {
+    return null;
+  }
+
+  try {
+    // Format conversation for AI analysis
+    const conversationText = messages
+      .filter(msg => msg.role === 'user' && msg.content)
+      .map(msg => `User: ${msg.content}`)
+      .join('\n\n');
+
+    if (!conversationText || conversationText.trim().length < 50) {
+      return null;
+    }
+
+    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+
+    const summaryPrompt = `You are a mental health AI assistant. Based on the following conversation history, create a comprehensive summary about this user that will help you provide personalized support in future conversations.
+
+${existingSummary ? `Previous summary to update:\n${existingSummary}\n\n` : ''}
+
+Analyze the conversation and create a summary that includes:
+
+1. **Background & Context**: Key personal details, life circumstances, and context mentioned
+2. **Mental Health Profile**: Emotional patterns, challenges, triggers, and coping mechanisms
+3. **Goals & Aspirations**: What the user wants to achieve or work on
+4. **Communication Style**: How they express themselves, their preferences
+5. **Progress & Insights**: Important realizations, breakthroughs, or patterns identified
+6. **Support Needs**: What kind of support or approach works best for them
+
+**Guidelines:**
+- Write in third person (e.g., "The user struggles with...", "They have mentioned...")
+- Be comprehensive but concise (300-500 words)
+- Focus on patterns and insights, not individual message details
+- Maintain therapeutic context without verbatim quotes
+- Highlight what's most relevant for future personalized support
+- If updating an existing summary, merge new information while preserving important context
+
+Conversation History:
+${conversationText.substring(0, 10000)} // Limit input to avoid token issues
+
+Generate a comprehensive user summary:`;
+
+    const result = await model.generateContent(summaryPrompt);
+    const response = result.response;
+    const summaryText = response.text()?.trim() || '';
+
+    if (!summaryText || summaryText.length < 50) {
+      logger.warn('AI summary generation returned empty or too short result');
+      return null;
+    }
+
+    return {
+      type: 'user_summary',
+      content: summaryText.substring(0, 2000), // Limit to 2000 chars
+      importance: 10, // User summaries are always high importance
+      tags: ['summary', 'user-profile', 'ai-generated'],
+      context: `Generated from ${messages.length} messages`,
+    };
+
+  } catch (error: any) {
+    logger.warn('AI-powered user summary generation failed:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Extract key facts from messages for persistent memory
+ * Uses AI-powered extraction when available, falls back to keyword-based extraction
+ * Returns facts that should be stored in LongTermMemory
+ */
+export async function extractKeyFacts(
+  messages: Array<{ role: string; content: string; timestamp?: Date }>,
+  limit: number = 10
+): Promise<Array<{
+  type: 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference';
+  content: string;
+  importance: number;
+  tags: string[];
+  context?: string;
+}>> {
+  // Try AI-powered extraction first
+  const aiFacts = await extractKeyFactsWithAI(messages, limit);
+  
+  if (aiFacts.length > 0) {
+    logger.debug(`AI extracted ${aiFacts.length} facts from conversation`);
+    return aiFacts;
+  }
+
+  // Fallback to keyword-based extraction if AI extraction failed or returned no facts
+  logger.debug('Falling back to keyword-based fact extraction');
+  return extractKeyFactsKeywordBased(messages, limit);
 }
 

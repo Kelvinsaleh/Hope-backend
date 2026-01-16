@@ -161,6 +161,35 @@ export const createJournalEntry = async (req: Request, res: Response) => {
 
     await journalEntry.save();
 
+    // Extract key facts from journal entry for long-term memory (async, don't block response)
+    // This helps the AI remember important details mentioned in journal entries
+    const { extractKeyFacts, generateUserSummary } = require('../utils/conversationOptimizer');
+    
+    // Convert journal entry to message format for extraction
+    const journalMessages = [{
+      role: 'user',
+      content: `${journalEntry.title || ''}\n\n${journalEntry.content}`,
+      timestamp: journalEntry.createdAt || new Date(),
+    }];
+
+    extractKeyFacts(journalMessages, 5)
+      .then((keyFacts) => {
+        if (keyFacts.length > 0) {
+          logger.info(`Extracted ${keyFacts.length} key facts from journal entry`);
+          // Store key facts asynchronously
+          return storeKeyFactsFromJournal(userId.toString(), keyFacts, journalEntry._id.toString());
+        }
+      })
+      .catch((error: any) => {
+        logger.warn('Failed to extract/store key facts from journal entry:', error.message);
+      });
+
+    // Also update user summary if enough journal entries exist
+    updateUserSummaryFromJournals(userId.toString())
+      .catch((error: any) => {
+        logger.warn('Failed to update user summary from journals:', error.message);
+      });
+
     res.status(201).json({
       success: true,
       message: "Journal entry created successfully",
@@ -176,6 +205,136 @@ export const createJournalEntry = async (req: Request, res: Response) => {
 };
 
 // Get all journal entries for a user
+/**
+ * Store key facts extracted from journal entries into persistent memory
+ */
+async function storeKeyFactsFromJournal(
+  userId: string,
+  facts: Array<{
+    type: 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference';
+    content: string;
+    importance: number;
+    tags: string[];
+    context?: string;
+  }>,
+  journalEntryId: string
+): Promise<void> {
+  if (!facts || facts.length === 0) return;
+
+  try {
+    const userIdObj = new Types.ObjectId(userId);
+    
+    // Store facts that don't already exist (avoid duplicates)
+    for (const fact of facts) {
+      // Check if similar fact already exists
+      const existing = await LongTermMemoryModel.findOne({
+        userId: userIdObj,
+        content: { $regex: new RegExp(fact.content.substring(0, 50), 'i') },
+      });
+
+      if (!existing) {
+        // Store new fact with journal context
+        await LongTermMemoryModel.create({
+          userId: userIdObj,
+          type: fact.type,
+          content: fact.content,
+          importance: fact.importance,
+          tags: [...fact.tags, 'journal', 'user-stated'],
+          context: `From journal entry: ${journalEntryId}`,
+          timestamp: new Date(),
+        });
+        logger.debug(`Stored key fact from journal: ${fact.type} - ${fact.content.substring(0, 50)}...`);
+      } else {
+        // Update importance if new fact is more important
+        if (fact.importance > existing.importance) {
+          existing.importance = fact.importance;
+          existing.timestamp = new Date();
+          await existing.save();
+          logger.debug(`Updated importance for existing fact from journal: ${fact.content.substring(0, 50)}...`);
+        }
+      }
+    }
+  } catch (error: any) {
+    logger.error('Error storing key facts from journal:', error);
+    // Don't throw - this is non-critical
+  }
+}
+
+/**
+ * Update user summary based on journal entries
+ * Generates or updates summary after accumulating enough journal entries
+ */
+async function updateUserSummaryFromJournals(userId: string): Promise<void> {
+  try {
+    const userIdObj = new Types.ObjectId(userId);
+    
+    // Get recent journal entries (last 10)
+    const recentJournals = await JournalEntry.find({ userId: userIdObj })
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean();
+
+    // Only generate/update summary if we have at least 5 journal entries
+    if (recentJournals.length < 5) {
+      return;
+    }
+
+    // Get existing user summary
+    const existingSummary = await LongTermMemoryModel.findOne({
+      userId: userIdObj,
+      type: 'user_summary',
+    }).lean();
+
+    // Convert journal entries to message format for summary generation
+    const journalMessages = recentJournals
+      .reverse() // Oldest first for chronological context
+      .map((entry: any) => ({
+        role: 'user' as const,
+        content: `${entry.title || ''}\n\n${entry.content || ''}`,
+        timestamp: entry.createdAt || new Date(),
+      }));
+
+    const { generateUserSummary } = require('../utils/conversationOptimizer');
+    const summary = await generateUserSummary(
+      journalMessages,
+      existingSummary?.content
+    );
+
+    if (summary) {
+      if (existingSummary) {
+        // Update existing summary
+        await LongTermMemoryModel.findByIdAndUpdate(
+          existingSummary._id,
+          {
+            content: summary.content,
+            importance: summary.importance,
+            tags: summary.tags,
+            context: `Generated from ${recentJournals.length} journal entries`,
+            timestamp: new Date(),
+          },
+          { new: true }
+        );
+        logger.info('Updated user summary from journal entries');
+      } else {
+        // Create new summary
+        await LongTermMemoryModel.create({
+          userId: userIdObj,
+          type: 'user_summary',
+          content: summary.content,
+          importance: summary.importance,
+          tags: summary.tags,
+          context: `Generated from ${recentJournals.length} journal entries`,
+          timestamp: new Date(),
+        });
+        logger.info('Created new user summary from journal entries');
+      }
+    }
+  } catch (error: any) {
+    logger.warn('Error updating user summary from journals:', error.message);
+    // Don't throw - this is non-critical
+  }
+}
+
 export const getJournalEntries = async (req: Request, res: Response) => {
   try {
     const userId = new Types.ObjectId(req.user.id);

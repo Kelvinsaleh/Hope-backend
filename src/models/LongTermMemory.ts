@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface ILongTermMemory extends Document {
   userId: mongoose.Types.ObjectId;
-  type: 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference';
+  type: 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference' | 'user_summary';
   content: string;
   importance: number; // 1-10
   timestamp: Date;
@@ -22,7 +22,7 @@ const LongTermMemorySchema = new Schema<ILongTermMemory>(
     },
     type: {
       type: String,
-      enum: ['emotional_theme', 'coping_pattern', 'goal', 'trigger', 'insight', 'preference'],
+      enum: ['emotional_theme', 'coping_pattern', 'goal', 'trigger', 'insight', 'preference', 'user_summary'],
       required: true,
       index: true,
     },

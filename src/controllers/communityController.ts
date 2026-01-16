@@ -212,6 +212,36 @@ export const createPost = async (req: Request, res: Response) => {
     }
     
     await post.populate('userId', 'name');
+
+    // Notify mentioned users in post content (supports multiple @mentions anywhere in text)
+    const mentionRegex = /@([A-Za-z0-9_]+)/g;
+    const mentionedUsernames = new Set<string>();
+    let mentionMatch;
+    while ((mentionMatch = mentionRegex.exec(content)) !== null) {
+      mentionedUsernames.add(mentionMatch[1]);
+    }
+
+    if (mentionedUsernames.size > 0) {
+      const { createNotification } = await import('./notificationController');
+      for (const username of mentionedUsernames) {
+        try {
+          const mentionedUser = await User.findOne({
+            name: { $regex: new RegExp(`^${username}$`, 'i') },
+          }).lean() as any;
+
+          if (mentionedUser && !mentionedUser._id.equals(userId)) {
+            await createNotification({
+              userId: mentionedUser._id,
+              type: 'mention',
+              actorId: userId,
+              relatedPostId: post._id as Types.ObjectId,
+            });
+          }
+        } catch (err) {
+          logger.warn(`Failed to notify mention for @${username}`, err);
+        }
+      }
+    }
     
     res.status(201).json({
       success: true,
@@ -380,15 +410,47 @@ export const getPostComments = async (req: Request, res: Response) => {
 export const createComment = async (req: Request, res: Response) => {
   try {
     const userId = new Types.ObjectId(req.user._id);
-    const { postId, content, isAnonymous, parentCommentId, images } = req.body;
+    const { postId, content, isAnonymous, parentCommentId } = req.body;
+    let { images } = req.body;
     
-    // Convert postId to ObjectId
-    const postObjectId = new Types.ObjectId(postId);
+    // Validate postId
+    let postObjectId: Types.ObjectId;
+    try {
+      postObjectId = new Types.ObjectId(postId);
+    } catch {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid postId format'
+      });
+    }
+    
+    // Basic content validation
+    const trimmed = (content || '').trim();
+    if (!trimmed) {
+      return res.status(400).json({
+        success: false,
+        error: 'Comment cannot be empty'
+      });
+    }
+    if (trimmed.length > 2000) {
+      return res.status(400).json({
+        success: false,
+        error: 'Comment exceeds the 2000 character limit'
+      });
+    }
+    
+    // Images safety: ensure array and max 3
+    if (images && !Array.isArray(images)) {
+      images = [images];
+    }
+    if (Array.isArray(images) && images.length > 3) {
+      images = images.slice(0, 3);
+    }
     
     // Comments are free for all authenticated users
     
     // Moderate content
-    const moderation = await CommunityModeration.moderateContent(content);
+    const moderation = await CommunityModeration.moderateContent(trimmed);
     if (!moderation.isSafe) {
       return res.status(400).json({
         success: false,
@@ -403,7 +465,7 @@ export const createComment = async (req: Request, res: Response) => {
     const comment = new CommunityComment({
       postId: postObjectId,
       userId,
-      content,
+      content: trimmed,
       isAnonymous: isAnonymous || false,
       parentCommentId: parentCommentId ? new Types.ObjectId(parentCommentId) : undefined,
       images: images || [],
@@ -463,29 +525,36 @@ export const createComment = async (req: Request, res: Response) => {
       });
     }
     
-    // Parse @mentions in content and create mention notifications
-    // Format: @username at the start of content
-    const mentionRegex = /^@(\w+)\s+/;
-    const mentionMatch = content.match(mentionRegex);
-    if (mentionMatch) {
-      const mentionedUsername = mentionMatch[1];
-      try {
-        const mentionedUser = await User.findOne({ name: mentionedUsername }).lean() as any;
-        if (mentionedUser && !mentionedUser._id.equals(userId)) {
-          // Don't create duplicate notification if we already created a reply notification for this user
-          if (!parentCommentOwnerId || !mentionedUser._id.equals(parentCommentOwnerId._id)) {
-            await createNotification({
-              userId: mentionedUser._id,
-              type: 'mention',
-              actorId: userId,
-              relatedPostId: post._id as Types.ObjectId,
-              relatedCommentId: comment._id as Types.ObjectId,
-            });
+    // Parse @mentions anywhere in content and create mention notifications (case-insensitive)
+    const mentionRegex = /@([A-Za-z0-9_]+)/g;
+    const mentionedUsernames = new Set<string>();
+    let match;
+    while ((match = mentionRegex.exec(content)) !== null) {
+      mentionedUsernames.add(match[1]);
+    }
+
+    if (mentionedUsernames.size > 0) {
+      for (const username of mentionedUsernames) {
+        try {
+          const mentionedUser = await User.findOne({
+            name: { $regex: new RegExp(`^${username}$`, 'i') },
+          }).lean() as any;
+
+          if (mentionedUser && !mentionedUser._id.equals(userId)) {
+            // Avoid duplicate if reply already notified this user
+            if (!parentCommentOwnerId || !mentionedUser._id.equals(parentCommentOwnerId._id)) {
+              await createNotification({
+                userId: mentionedUser._id,
+                type: 'mention',
+                actorId: userId,
+                relatedPostId: post._id as Types.ObjectId,
+                relatedCommentId: comment._id as Types.ObjectId,
+              });
+            }
           }
+        } catch (err) {
+          logger.warn(`Failed to notify mention for @${username}`, err);
         }
-      } catch (err) {
-        // If user lookup fails, continue without mention notification
-        logger.warn(`Failed to find mentioned user: ${mentionedUsername}`, err);
       }
     }
     
@@ -753,10 +822,12 @@ export const getCommunityStats = async (req: Request, res: Response) => {
 export const getFeed = async (req: Request, res: Response) => {
   try {
     const limit = Math.min(Number((req.query.limit as string) || 20), 50);
+    const skip = Math.max(Number((req.query.skip as string) || 0), 0);
 
     const posts = await CommunityPost.aggregate([
       { $match: { isDeleted: false } },
       { $sort: { createdAt: -1 } },
+      { $skip: skip },
       { $limit: limit },
       // project minimal fields plus counts
       {
