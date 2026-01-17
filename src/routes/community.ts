@@ -46,6 +46,18 @@ const upload = multer({
   },
 });
 
+const uploadSingle = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  upload.single('file')(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({
+        success: false,
+        error: err.message || 'Upload failed',
+      });
+    }
+    return next();
+  });
+};
+
 // Public routes (no auth required)
 router.get('/spaces', getCommunitySpaces);
 router.get('/stats', getCommunityStats);
@@ -71,8 +83,8 @@ router.post('/comments', createComment);
 router.delete('/comments/:commentId', deleteComment);
 
 // Media Upload (already protected by authenticateToken middleware above)
-router.post('/upload/image', upload.single('file'), uploadImage);
-router.post('/upload/video', upload.single('file'), uploadVideo);
+router.post('/upload/image', uploadSingle, uploadImage);
+router.post('/upload/video', uploadSingle, uploadVideo);
 
 // Images (legacy endpoint)
 router.post('/images', saveImageMetadata);

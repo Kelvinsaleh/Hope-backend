@@ -980,6 +980,15 @@ export const sharePost = async (req: Request, res: Response) => {
 // Upload image to Vercel Blob
 export const uploadImage = async (req: Request, res: Response) => {
   try {
+    const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+    if (!blobToken) {
+      logger.error('BLOB_READ_WRITE_TOKEN is not set for image uploads');
+      return res.status(500).json({
+        success: false,
+        error: 'Storage is not configured for uploads'
+      });
+    }
+
     if (!req.file) {
       return res.status(400).json({
         success: false,
@@ -1011,7 +1020,7 @@ export const uploadImage = async (req: Request, res: Response) => {
       {
         access: 'public',
         contentType: req.file.mimetype,
-        token: process.env.BLOB_READ_WRITE_TOKEN
+        token: blobToken
       }
     );
 
@@ -1033,6 +1042,15 @@ export const uploadImage = async (req: Request, res: Response) => {
 // Upload video to Vercel Blob (max 60 seconds, validated on frontend)
 export const uploadVideo = async (req: Request, res: Response) => {
   try {
+    const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+    if (!blobToken) {
+      logger.error('BLOB_READ_WRITE_TOKEN is not set for video uploads');
+      return res.status(500).json({
+        success: false,
+        error: 'Storage is not configured for uploads'
+      });
+    }
+
     if (!req.file) {
       return res.status(400).json({
         success: false,
@@ -1067,7 +1085,7 @@ export const uploadVideo = async (req: Request, res: Response) => {
       {
         access: 'public',
         contentType: req.file.mimetype,
-        token: process.env.BLOB_READ_WRITE_TOKEN
+        token: blobToken
       }
     );
 
