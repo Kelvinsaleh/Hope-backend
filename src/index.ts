@@ -81,6 +81,8 @@ const allowedOrigins = (() => {
   ].filter((url): url is string => Boolean(url));
 })();
 
+const allowLocalhostInProd = process.env.ALLOW_LOCALHOST_ORIGINS === 'true';
+
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
     // Security: In production, require origin for web requests
@@ -88,6 +90,11 @@ const corsOptions = {
       // Allow requests with no origin ONLY for mobile apps (identified by API key or JWT in Authorization header)
       if (!origin) {
         // Mobile apps will authenticate via JWT token, allow them
+        return callback(null, true);
+      }
+
+      // Allow localhost origins in production when explicitly enabled (dev/testing)
+      if (allowLocalhostInProd && (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:'))) {
         return callback(null, true);
       }
       
