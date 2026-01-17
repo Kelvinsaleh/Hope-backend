@@ -5,15 +5,19 @@ import { logger } from "./logger";
 // This prevents operations from being queued indefinitely when DB is disconnected
 mongoose.set('bufferCommands', false);
 
-const MONGODB_URI = process.env.MONGODB_URI;
-
-export const connectDB = async () => {
-  if (!MONGODB_URI) {
+const resolveMongoUri = (): string => {
+  const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
+  if (!uri) {
     logger.error("MongoDB connection error: MONGODB_URI is not set");
     // In production we should fail fast; for local dev we log clearly.
-    throw new Error("MONGODB_URI environment variable is not set");
+    throw new Error("MONGODB_URI (or MONGO_URI) environment variable is not set");
   }
-  
+  return uri;
+};
+
+export const connectDB = async () => {
+  const mongoUri = resolveMongoUri();
+
   try {
     // Check if already connected
     if (mongoose.connection.readyState === 1) {
@@ -46,28 +50,86 @@ export const connectDB = async () => {
     };
 
     logger.info("Attempting to connect to MongoDB...");
-    const maskedUri = MONGODB_URI.replace(/\/\/([^:]+):([^@]+)@/, '//***:***@');
+    const maskedUri = mongoUri.replace(/\/\/([^:]+):([^@]+)@/, '//***:***@');
     logger.info(`MongoDB URI: ${maskedUri}`);
+    logger.info(`Connection options: serverSelectionTimeoutMS=${options.serverSelectionTimeoutMS}ms, connectTimeoutMS=${options.connectTimeoutMS}ms`);
     
-    // Connect with timeout - mongoose.connect() will wait for connection
-    await mongoose.connect(MONGODB_URI, options);
+    // Set up connection event listener BEFORE calling connect
+    let connectionResolved = false;
     
-    // Wait for connection to be fully established (mongoose.connect should handle this, but verify)
-    let connectionEstablished = false;
-    const maxWaitTime = 30000; // 30 seconds max wait
-    const startTime = Date.now();
+    const connectionPromise = new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        if (!connectionResolved) {
+          connectionResolved = true;
+          reject(new Error(`MongoDB connection timeout after ${options.serverSelectionTimeoutMS! + 5000}ms. ReadyState: ${mongoose.connection.readyState}`));
+        }
+      }, options.serverSelectionTimeoutMS! + 5000); // Add 5s buffer
+      
+      const onConnected = () => {
+        if (!connectionResolved) {
+          connectionResolved = true;
+          clearTimeout(timeout);
+          mongoose.connection.removeListener('connected', onConnected);
+          mongoose.connection.removeListener('error', onError);
+          logger.info('MongoDB "connected" event fired');
+          resolve();
+        }
+      };
+      
+      const onError = (err: any) => {
+        if (!connectionResolved) {
+          connectionResolved = true;
+          clearTimeout(timeout);
+          mongoose.connection.removeListener('connected', onConnected);
+          mongoose.connection.removeListener('error', onError);
+          logger.error('MongoDB "error" event fired:', err);
+          reject(err);
+        }
+      };
+      
+      // Set up listeners before connecting
+      mongoose.connection.once('connected', onConnected);
+      mongoose.connection.once('error', onError);
+    });
     
-    while (!connectionEstablished && (Date.now() - startTime) < maxWaitTime) {
+    // Start the connection attempt
+    logger.info('Calling mongoose.connect()...');
+    const connectStartTime = Date.now();
+    
+    try {
+      // Call connect - this returns a promise that resolves when connection is ready
+      await mongoose.connect(mongoUri, options);
+      const connectDuration = Date.now() - connectStartTime;
+      logger.info(`mongoose.connect() resolved after ${connectDuration}ms`);
+    } catch (connectErr: any) {
+      logger.error('mongoose.connect() threw error:', connectErr);
+      throw connectErr;
+    }
+    
+    // Wait for the connection event (in case connect() resolved before event fired)
+    try {
+      await Promise.race([
+        connectionPromise,
+        new Promise<void>((_, reject) => {
+          setTimeout(() => reject(new Error('Connection event timeout')), 2000);
+        })
+      ]);
+    } catch (eventErr) {
+      // If connection event doesn't fire but readyState is 1, that's okay
       if (mongoose.connection.readyState === 1) {
-        connectionEstablished = true;
-        break;
+        logger.warn('Connection event did not fire, but readyState is 1. Continuing...');
+      } else {
+        logger.error('Connection event error:', eventErr);
+        throw eventErr;
       }
-      await new Promise(resolve => setTimeout(resolve, 100)); // Wait 100ms
     }
     
-    if (!connectionEstablished) {
-      throw new Error('MongoDB connection timeout - readyState never reached 1');
+    // Verify connection state
+    if (mongoose.connection.readyState !== 1) {
+      throw new Error(`MongoDB connection failed - readyState is ${mongoose.connection.readyState} (expected 1)`);
     }
+    
+    logger.info(`MongoDB connection established. ReadyState: ${mongoose.connection.readyState}`);
     
     // Verify connection with a ping
     const db = mongoose.connection.db;
@@ -92,9 +154,9 @@ export const connectDB = async () => {
     });
     
     // Log connection string info (masked) for debugging
-    if (MONGODB_URI) {
+    if (mongoUri) {
       try {
-        const uriParts = MONGODB_URI.split('@');
+        const uriParts = mongoUri.split('@');
         if (uriParts.length > 1) {
           const hostPart = uriParts[1].split('/')[0];
           logger.error(`Connection target: ${hostPart}`);
@@ -129,7 +191,7 @@ mongoose.connection.on('disconnected', async () => {
   logger.warn('Mongoose disconnected from MongoDB');
   
   // Attempt to reconnect if not already reconnecting and we have a URI
-  if (!isReconnecting && MONGODB_URI && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+  if (!isReconnecting && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
     isReconnecting = true;
     reconnectAttempts++;
     

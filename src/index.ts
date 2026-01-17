@@ -272,8 +272,13 @@ const autoSeedCommunity = async () => {
 };
 
 // Start server
+logger.info("Starting server initialization...");
+logger.info(`NODE_ENV: ${process.env.NODE_ENV || 'not set'}`);
+logger.info(`MONGODB_URI: ${process.env.MONGODB_URI ? '***set***' : 'NOT SET'}`);
+
 connectDB()
   .then(async () => {
+    logger.info("Database connection successful, proceeding with server startup...");
     // Wait for DB to be fully ready before starting server
     const mongoose = require('mongoose');
     if (mongoose.connection.readyState !== 1) {
@@ -343,22 +348,18 @@ connectDB()
   })
   .catch((err) => {
     logger.error("Failed to connect to database:", err);
+    logger.error("Error stack:", err.stack);
     logger.error("Database connection is required. Server will not start.");
+    logger.error(`NODE_ENV: ${process.env.NODE_ENV || 'not set'}`);
     
-    // In production, exit if database connection fails
-    if (process.env.NODE_ENV === 'production') {
-      logger.error("Exiting due to database connection failure in production");
-      process.exit(1);
-    } else {
-      // In development, still start server but log warning
-      logger.warn("Starting server anyway for testing (development mode)...");
-      logger.warn("⚠️  Database-dependent endpoints will fail!");
-      app.listen(PORT, () => {
-        logger.info(`🚀 Server is running on port ${PORT} (without database)`);
-        logger.info(`📊 Health check: http://localhost:${PORT}/health`);
-        logger.info(` Environment: ${process.env.NODE_ENV || 'development'}`);
-      });
-    }
+    // Always exit if database connection fails - don't start server without DB
+    logger.error("Exiting due to database connection failure");
+    logger.error("Please check:");
+    logger.error("1. MONGODB_URI environment variable is set correctly");
+    logger.error("2. MongoDB server is accessible from this network");
+    logger.error("3. MongoDB credentials are correct");
+    logger.error("4. Network/firewall allows connection to MongoDB");
+    process.exit(1);
   });
 
 export default app;
