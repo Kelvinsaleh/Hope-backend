@@ -4,7 +4,6 @@ import { logger } from "./logger";
 // Disable Mongoose buffering globally to fail fast if not connected
 // This prevents operations from being queued indefinitely when DB is disconnected
 mongoose.set('bufferCommands', false);
-mongoose.set('bufferMaxEntries', 0);
 
 const MONGODB_URI = process.env.MONGODB_URI;
 
@@ -29,11 +28,8 @@ export const connectDB = async () => {
       connectTimeoutMS: 60000, // Connection timeout - 60 seconds
       maxPoolSize: 10, // Maximum number of connections in the pool
       minPoolSize: 1, // Minimum number of connections in the pool (reduced for faster startup)
-      // Note: bufferMaxEntries and bufferCommands are Mongoose model-level options, not connection options
       retryWrites: true, // Enable retry writes for replica sets
       retryReads: true, // Enable retry reads for replica sets
-      // Disable strict mode for connection
-      strictQuery: false,
     };
 
     logger.info("Attempting to connect to MongoDB...");
