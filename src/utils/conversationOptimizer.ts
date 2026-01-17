@@ -206,7 +206,16 @@ export async function extractKeyFactsWithAI(
   messages: Array<{ role: string; content: string; timestamp?: Date }>,
   limit: number = 10
 ): Promise<Array<{
-  type: 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference';
+  type:
+    | 'emotional_theme'
+    | 'coping_pattern'
+    | 'goal'
+    | 'trigger'
+    | 'insight'
+    | 'preference'
+    | 'person'
+    | 'school'
+    | 'organization';
   content: string;
   importance: number;
   tags: string[];
@@ -229,7 +238,15 @@ export async function extractKeyFactsWithAI(
 
     const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
-    const extractionPrompt = `Analyze the following therapy conversation and extract key facts that should be remembered about the user for future sessions. Focus on:
+    const extractionPrompt = `Analyze the following therapy conversation and extract key facts that should be remembered about the user for future sessions.
+
+Only store facts that are:
+- Likely to remain true over time
+- Useful across many future conversations
+- Non-sensitive and not overly invasive
+- Not time-bound or one-off emotions
+
+Focus on:
 
 1. **Goals** - What the user wants to achieve (e.g., "I want to reduce anxiety", "My goal is to sleep better")
 2. **Triggers** - What causes stress/anxiety/negative emotions (e.g., "Deadlines make me anxious", "I get stressed when...")
@@ -237,10 +254,17 @@ export async function extractKeyFactsWithAI(
 4. **Preferences** - Communication style, activities they like/dislike, preferences
 5. **Emotional Themes** - Recurring emotional patterns or states
 6. **Coping Patterns** - How the user typically responds to challenges (e.g., "I always...", "I tend to...")
+7. **People** - Names or roles of important people (e.g., "My sister Ana", "My boss Mark")
+8. **School/Work** - School, university, or workplace names and context
+
+Do NOT store:
+- Temporary feelings (e.g., "I felt sad today")
+- Exact timestamps or one-off events
+- Highly sensitive or intrusive details
 
 Return ONLY a valid JSON array of facts, each with this exact structure:
 {
-  "type": "goal" | "trigger" | "insight" | "preference" | "emotional_theme" | "coping_pattern",
+  "type": "goal" | "trigger" | "insight" | "preference" | "emotional_theme" | "coping_pattern" | "person" | "school" | "organization",
   "content": "A clear, concise fact (max 150 characters)",
   "importance": 1-10 (higher = more important for future conversations),
   "tags": ["relevant", "tags"],
@@ -281,7 +305,16 @@ Return ONLY the JSON array, no explanations.`;
         return fact.type && fact.content && typeof fact.importance === 'number';
       })
       .map((fact: any) => ({
-        type: fact.type as 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference',
+        type: fact.type as
+          | 'emotional_theme'
+          | 'coping_pattern'
+          | 'goal'
+          | 'trigger'
+          | 'insight'
+          | 'preference'
+          | 'person'
+          | 'school'
+          | 'organization',
         content: fact.content.trim().substring(0, 200), // Limit content length
         importance: Math.max(1, Math.min(10, fact.importance || 5)), // Clamp 1-10
         tags: Array.isArray(fact.tags) ? fact.tags.slice(0, 5) : [],
@@ -303,14 +336,32 @@ function extractKeyFactsKeywordBased(
   messages: Array<{ role: string; content: string; timestamp?: Date }>,
   limit: number = 10
 ): Array<{
-  type: 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference';
+  type:
+    | 'emotional_theme'
+    | 'coping_pattern'
+    | 'goal'
+    | 'trigger'
+    | 'insight'
+    | 'preference'
+    | 'person'
+    | 'school'
+    | 'organization';
   content: string;
   importance: number;
   tags: string[];
   context?: string;
 }> {
   const facts: Array<{
-    type: 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference';
+    type:
+      | 'emotional_theme'
+      | 'coping_pattern'
+      | 'goal'
+      | 'trigger'
+      | 'insight'
+      | 'preference'
+      | 'person'
+      | 'school'
+      | 'organization';
     content: string;
     importance: number;
     tags: string[];
@@ -324,6 +375,25 @@ function extractKeyFactsKeywordBased(
   const patternKeywords = ['always', 'usually', 'pattern', 'habit', 'tend to', 'often', 'frequently', 'typically'];
   const preferenceKeywords = ['prefer', 'like', 'dislike', 'enjoy', 'love', 'hate', 'favorite', 'favourite', 'better', 'best'];
   const emotionalKeywords = ['feel', 'feeling', 'emotion', 'emotional', 'mood', 'sad', 'happy', 'angry', 'depressed', 'lonely', 'excited'];
+  const personKeywords = [
+    'my mom', 'my mother', 'my dad', 'my father', 'my sister', 'my brother',
+    'my wife', 'my husband', 'my partner', 'my boyfriend', 'my girlfriend',
+    'my friend', 'my boss', 'my manager', 'my coworker', 'my colleague',
+    'my teacher', 'my professor', 'my coach', 'my therapist',
+    'my son', 'my daughter', 'my child',
+  ];
+  const schoolKeywords = ['school', 'college', 'university', 'campus', 'class', 'major', 'degree'];
+  const orgKeywords = ['work', 'job', 'company', 'office', 'workplace', 'team'];
+  const namePatterns = [
+    /my name is\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)*)/i,
+    /call me\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)*)/i,
+  ];
+  const schoolPatterns = [
+    /(?:i go to|i attend|i study at)\s+([A-Z][\w&.'-]+(?:\s[A-Z][\w&.'-]+)*)/i,
+  ];
+  const orgPatterns = [
+    /(?:i work at|i work for|i'm at|i am at)\s+([A-Z][\w&.'-]+(?:\s[A-Z][\w&.'-]+)*)/i,
+  ];
 
   for (const msg of messages) {
     if (msg.role !== 'user') continue;
@@ -397,6 +467,110 @@ function extractKeyFactsKeywordBased(
       }
     }
 
+    // Extract user name (stable identity)
+    for (const pattern of namePatterns) {
+      const match = pattern.exec(msg.content || '');
+      if (match && match.length >= 2) {
+        const name = match[1]?.trim();
+        if (name && name.length >= 2) {
+          facts.push({
+            type: 'person',
+            content: `User's name is ${name}`,
+            importance: 9,
+            tags: ['person', 'user', 'identity'],
+            context: msg.timestamp?.toISOString(),
+          });
+          break;
+        }
+      }
+    }
+
+    // Extract important people
+    if (personKeywords.some(keyword => content.includes(keyword))) {
+      const sentences = msg.content?.split(/[.!?]/) || [];
+      for (const sentence of sentences) {
+        const lower = sentence.toLowerCase();
+        if (personKeywords.some(keyword => lower.includes(keyword))) {
+          facts.push({
+            type: 'person',
+            content: sentence.trim(),
+            importance: 7,
+            tags: ['person', 'relationship', 'user-stated'],
+            context: msg.timestamp?.toISOString(),
+          });
+          break;
+        }
+      }
+    }
+
+    // Extract school/education details
+    if (schoolKeywords.some(keyword => content.includes(keyword))) {
+      const sentences = msg.content?.split(/[.!?]/) || [];
+      for (const sentence of sentences) {
+        const lower = sentence.toLowerCase();
+        if (schoolKeywords.some(keyword => lower.includes(keyword))) {
+          facts.push({
+            type: 'school',
+            content: sentence.trim(),
+            importance: 6,
+            tags: ['school', 'education', 'user-stated'],
+            context: msg.timestamp?.toISOString(),
+          });
+          break;
+        }
+      }
+    }
+    for (const pattern of schoolPatterns) {
+      const match = pattern.exec(msg.content || '');
+      if (match && match.length >= 2) {
+        const school = match[1]?.trim();
+        if (school && school.length >= 2) {
+          facts.push({
+            type: 'school',
+            content: `User studies at ${school}`,
+            importance: 6,
+            tags: ['school', 'education', 'user-stated'],
+            context: msg.timestamp?.toISOString(),
+          });
+          break;
+        }
+      }
+    }
+
+    // Extract workplace/organization details
+    if (orgKeywords.some(keyword => content.includes(keyword))) {
+      const sentences = msg.content?.split(/[.!?]/) || [];
+      for (const sentence of sentences) {
+        const lower = sentence.toLowerCase();
+        if (orgKeywords.some(keyword => lower.includes(keyword))) {
+          facts.push({
+            type: 'organization',
+            content: sentence.trim(),
+            importance: 6,
+            tags: ['organization', 'work', 'user-stated'],
+            context: msg.timestamp?.toISOString(),
+          });
+          break;
+        }
+      }
+    }
+    for (const pattern of orgPatterns) {
+      const match = pattern.exec(msg.content || '');
+      if (match && match.length >= 2) {
+        const org = match[1]?.trim();
+        if (org && org.length >= 2) {
+          facts.push({
+            type: 'organization',
+            content: `User works at ${org}`,
+            importance: 6,
+            tags: ['organization', 'work', 'user-stated'],
+            context: msg.timestamp?.toISOString(),
+          });
+          break;
+        }
+      }
+    }
+
     // Extract emotional themes and coping patterns
     if (emotionalKeywords.some(keyword => content.includes(keyword)) || patternKeywords.some(keyword => content.includes(keyword))) {
       // Look for patterns indicating coping mechanisms
@@ -416,16 +590,28 @@ function extractKeyFactsKeywordBased(
         }
       }
       
-      // Extract emotional themes
+      // Extract emotional themes (favor stable patterns over one-off states)
       if (emotionalKeywords.some(keyword => content.includes(keyword)) && content.length > 20) {
-        // Extract emotional context
-        facts.push({
-          type: 'emotional_theme',
-          content: msg.content.trim().substring(0, 200), // First 200 chars
-          importance: 7,
-          tags: ['emotion', 'emotional-state'],
-          context: msg.timestamp?.toISOString(),
-        });
+        const timeBoundKeywords = ['today', 'yesterday', 'right now', 'currently', 'this morning', 'tonight', 'this week'];
+        const sentences = msg.content?.split(/[.!?]/) || [];
+        for (const sentence of sentences) {
+          const lower = sentence.toLowerCase();
+          const hasTimeBound = timeBoundKeywords.some(keyword => lower.includes(keyword));
+          const hasPattern = patternKeywords.some(keyword => lower.includes(keyword));
+          if (hasTimeBound && !hasPattern) {
+            continue;
+          }
+          if (emotionalKeywords.some(keyword => lower.includes(keyword)) && sentence.trim().length > 15) {
+            facts.push({
+              type: 'emotional_theme',
+              content: sentence.trim().substring(0, 200),
+              importance: hasPattern ? 7 : 6,
+              tags: ['emotion', 'emotional-state'],
+              context: msg.timestamp?.toISOString(),
+            });
+            break;
+          }
+        }
       }
     }
   }
@@ -525,7 +711,16 @@ export async function extractKeyFacts(
   messages: Array<{ role: string; content: string; timestamp?: Date }>,
   limit: number = 10
 ): Promise<Array<{
-  type: 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference';
+  type:
+    | 'emotional_theme'
+    | 'coping_pattern'
+    | 'goal'
+    | 'trigger'
+    | 'insight'
+    | 'preference'
+    | 'person'
+    | 'school'
+    | 'organization';
   content: string;
   importance: number;
   tags: string[];

@@ -175,7 +175,16 @@ export const createJournalEntry = async (req: Request, res: Response) => {
 
     extractKeyFacts(journalMessages, 5)
       .then((keyFacts: Array<{
-        type: 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference';
+        type:
+          | 'emotional_theme'
+          | 'coping_pattern'
+          | 'goal'
+          | 'trigger'
+          | 'insight'
+          | 'preference'
+          | 'person'
+          | 'school'
+          | 'organization';
         content: string;
         importance: number;
         tags: string[];
@@ -221,7 +230,16 @@ export const createJournalEntry = async (req: Request, res: Response) => {
 async function storeKeyFactsFromJournal(
   userId: string,
   facts: Array<{
-    type: 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference';
+    type:
+      | 'emotional_theme'
+      | 'coping_pattern'
+      | 'goal'
+      | 'trigger'
+      | 'insight'
+      | 'preference'
+      | 'person'
+      | 'school'
+      | 'organization';
     content: string;
     importance: number;
     tags: string[];

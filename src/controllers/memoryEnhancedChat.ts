@@ -80,7 +80,17 @@ interface UserMemory {
   therapySessions: any[];
   insights: any[];
   facts: Array<{
-    type: 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference' | 'user_summary';
+    type:
+      | 'emotional_theme'
+      | 'coping_pattern'
+      | 'goal'
+      | 'trigger'
+      | 'insight'
+      | 'preference'
+      | 'person'
+      | 'school'
+      | 'organization'
+      | 'user_summary';
     content: string;
     importance: number;
     tags: string[];
@@ -88,6 +98,51 @@ interface UserMemory {
     timestamp: Date;
   }>;
   lastUpdated: Date;
+}
+
+type MemoryCommand = {
+  action: 'remember' | 'forget';
+  subject?: string;
+  forgetAll?: boolean;
+};
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function parseMemoryCommand(message: string): MemoryCommand | null {
+  const text = message.trim();
+  if (!text) return null;
+  const lower = text.toLowerCase();
+
+  // Forget all memories
+  if (
+    lower.includes('forget everything') ||
+    lower.includes('forget all') ||
+    lower.includes('forget what you know about me')
+  ) {
+    return { action: 'forget', forgetAll: true };
+  }
+
+  // "Don't remember ..." or "Do not remember ..."
+  const dontRememberMatch = text.match(/^(?:don['’]?t|do not)\s+remember\s+(.*)$/i);
+  if (dontRememberMatch) {
+    return { action: 'forget', subject: dontRememberMatch[1]?.trim() };
+  }
+
+  // "Forget ..." or "Forget what you know about ..."
+  const forgetMatch = text.match(/^forget(?:\s+what you know about)?\s+(.*)$/i);
+  if (forgetMatch) {
+    return { action: 'forget', subject: forgetMatch[1]?.trim() };
+  }
+
+  // "Remember ..." or "Remember that ..."
+  const rememberMatch = text.match(/^remember(?:\s+that)?\s+(.*)$/i);
+  if (rememberMatch) {
+    return { action: 'remember', subject: rememberMatch[1]?.trim() };
+  }
+
+  return null;
 }
 
 // Rate limiting function
@@ -755,6 +810,87 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
         messages: [],
       });
       await session.save();
+    }
+
+    // Handle explicit memory control commands before building AI context.
+    const memoryCommand = parseMemoryCommand(message);
+    if (memoryCommand) {
+      const now = new Date();
+      if (memoryCommand.action === 'remember') {
+        const rawSubject = memoryCommand.subject || '';
+        const subject = ['this', 'that', 'it'].includes(rawSubject.toLowerCase())
+          ? ''
+          : rawSubject;
+        if (subject) {
+          await LongTermMemoryModel.create({
+            userId: userIdObj,
+            type: 'insight',
+            content: subject.substring(0, 200),
+            importance: 8,
+            tags: ['user-controlled', 'explicit-memory'],
+            context: 'User asked to remember this',
+            timestamp: now,
+          });
+          invalidateMemoryCacheForUser(userId);
+        }
+
+        session.messages.push({
+          role: "user",
+          content: message,
+          timestamp: now,
+        });
+        session.messages.push({
+          role: "assistant",
+          content: subject ? "Got it — I’ll remember that." : "Tell me what you want me to remember.",
+          timestamp: now,
+        });
+        await session.save();
+
+        return res.json({
+          success: true,
+          response: subject ? "Got it — I’ll remember that." : "Tell me what you want me to remember.",
+          metadata: { memoryAction: 'remember' },
+        });
+      }
+
+      if (memoryCommand.action === 'forget') {
+        const rawSubject = memoryCommand.subject || '';
+        const subject = ['this', 'that', 'it'].includes(rawSubject.toLowerCase())
+          ? ''
+          : rawSubject;
+        if (memoryCommand.forgetAll) {
+          await LongTermMemoryModel.deleteMany({ userId: userIdObj });
+        } else if (subject) {
+          const escaped = escapeRegExp(subject);
+          await LongTermMemoryModel.deleteMany({
+            userId: userIdObj,
+            content: { $regex: new RegExp(escaped, 'i') },
+          });
+        }
+        invalidateMemoryCacheForUser(userId);
+
+        session.messages.push({
+          role: "user",
+          content: message,
+          timestamp: now,
+        });
+        session.messages.push({
+          role: "assistant",
+          content: subject || memoryCommand.forgetAll
+            ? "Understood — I’ll forget that."
+            : "Tell me what you want me to forget.",
+          timestamp: now,
+        });
+        await session.save();
+
+        return res.json({
+          success: true,
+          response: subject || memoryCommand.forgetAll
+            ? "Understood — I’ll forget that."
+            : "Tell me what you want me to forget.",
+          metadata: { memoryAction: 'forget' },
+        });
+      }
     }
 
     // Use memoryVersion or a compact request to avoid rebuilding full memory every call.
@@ -1469,7 +1605,16 @@ async function storeUserSummary(
 async function storeKeyFacts(
   userId: string,
   facts: Array<{
-    type: 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference';
+    type:
+      | 'emotional_theme'
+      | 'coping_pattern'
+      | 'goal'
+      | 'trigger'
+      | 'insight'
+      | 'preference'
+      | 'person'
+      | 'school'
+      | 'organization';
     content: string;
     importance: number;
     tags: string[];
@@ -1576,7 +1721,17 @@ async function gatherUserMemory(userId: string): Promise<UserMemory> {
 
     // Convert to facts format (including user_summary type)
     const facts = longTermMemories.map((mem: any) => ({
-      type: mem.type as 'emotional_theme' | 'coping_pattern' | 'goal' | 'trigger' | 'insight' | 'preference' | 'user_summary',
+      type: mem.type as
+        | 'emotional_theme'
+        | 'coping_pattern'
+        | 'goal'
+        | 'trigger'
+        | 'insight'
+        | 'preference'
+        | 'person'
+        | 'school'
+        | 'organization'
+        | 'user_summary',
       content: mem.content,
       importance: mem.importance,
       tags: mem.tags || [],
@@ -1777,7 +1932,21 @@ export const updateMemory = async (req: Request, res: Response) => {
     if (content !== undefined && typeof content === 'string' && content.trim()) {
       update.content = content.trim();
     }
-    if (type !== undefined && ['emotional_theme', 'coping_pattern', 'goal', 'trigger', 'insight', 'preference', 'user_summary'].includes(type)) {
+    if (
+      type !== undefined &&
+      [
+        'emotional_theme',
+        'coping_pattern',
+        'goal',
+        'trigger',
+        'insight',
+        'preference',
+        'person',
+        'school',
+        'organization',
+        'user_summary',
+      ].includes(type)
+    ) {
       update.type = type;
     }
     if (importance !== undefined && typeof importance === 'number' && importance >= 1 && importance <= 10) {
