@@ -236,7 +236,7 @@ export async function extractKeyFactsWithAI(
       return [];
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const extractionPrompt = `Analyze the following therapy conversation and extract key facts that should be remembered about the user for future sessions.
 
@@ -651,7 +651,7 @@ export async function generateUserSummary(
       return null;
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const summaryPrompt = `You are a mental health AI assistant. Based on the following conversation history, create a comprehensive summary about this user that will help you provide personalized support in future conversations.
 

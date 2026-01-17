@@ -131,7 +131,7 @@ async function generateAISummary(
   }
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     // Format messages for summarization (only include user and assistant messages)
     const conversationText = messages
