@@ -16,6 +16,7 @@ import communityRoutes from './community';
 import adminRoutes from './admin';
 import notificationRoutes from './notifications';
 import personalizationRoutes from './personalization';
+import interventionRoutes from './interventions';
 
 const router = express.Router();
 
@@ -36,5 +37,6 @@ router.use("/community", communityRoutes);
 router.use("/admin", adminRoutes);
 router.use("/notifications", notificationRoutes);
 router.use("/personalization", personalizationRoutes);
+router.use("/interventions", interventionRoutes);
 
 export default router;

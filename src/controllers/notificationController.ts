@@ -81,10 +81,22 @@ export async function createNotification(params: {
         title = 'You Were Mentioned';
         body = `${actorName} mentioned you in a post`;
         break;
-      case 'billing':
-        title = 'Subscription Update';
-        body = (metadata && metadata.message) || 'Your subscription status changed.';
-        break;
+        case 'billing':
+          // Handle billing and system notifications (journal reminders, intervention reminders, effectiveness prompts, etc.)
+          if (metadata && metadata.reminderType === 'journal') {
+            title = 'Journal Reminder';
+            body = metadata.message || 'How has your day been? Take a moment to reflect.';
+          } else if (metadata && metadata.promptType === 'effectiveness') {
+            title = 'How was it?';
+            body = metadata.message || `How effective was "${metadata.interventionName}" for you? Rate it 1-10.`;
+          } else if (metadata && metadata.promptType === 'reminder') {
+            title = 'Continue Your Progress';
+            body = metadata.message || `You're working on "${metadata.interventionName}" - ready to continue?`;
+          } else {
+            title = 'Subscription Update';
+            body = (metadata && metadata.message) || 'Your subscription status changed.';
+          }
+          break;
     }
 
     // Create notification

@@ -297,6 +297,74 @@ function detectIntent(userMessage: string, recentMessages: Array<{ role: string;
   return 'casual';
 }
 
+/**
+ * Detect if CBT techniques would be helpful based on message content
+ * Only triggers when clear cognitive distortions or negative thought patterns are present
+ */
+function detectCBTIndicators(
+  message: string,
+  recentMessages: Array<{ role: string; content: string }>
+): { shouldUseCBT: boolean; indicators: string[] } {
+  const text = (message || '').toLowerCase();
+  const indicators: string[] = [];
+  
+  // Only proceed if message shows clear distress or negative thinking patterns
+  const distressSignals = ['anxious', 'anxiety', 'stressed', 'overwhelmed', 'sad', 'depressed', 'hopeless', 'helpless', 'worried', 'scared', 'afraid', 'upset', 'angry', 'frustrated'];
+  const hasDistress = distressSignals.some(signal => text.includes(signal));
+  
+  if (!hasDistress) {
+    return { shouldUseCBT: false, indicators: [] };
+  }
+  
+  // Cognitive distortion patterns (only when clear)
+  const allOrNothingPatterns = /\b(always|never|all|none|everyone|nobody|everything|nothing)\b/i;
+  if (allOrNothingPatterns.test(text)) {
+    indicators.push('all-or-nothing thinking');
+  }
+  
+  const catastrophizingPatterns = /\b(terrible|awful|disaster|horrible|worst|ruined|doomed|impossible)\b/i;
+  if (catastrophizingPatterns.test(text)) {
+    indicators.push('catastrophizing');
+  }
+  
+  const shouldStatements = /\b(should|must|have to|ought to|need to)\b.*\b(but|can't|cannot|unable)\b/i;
+  if (shouldStatements.test(text)) {
+    indicators.push('should statements');
+  }
+  
+  const personalizationPatterns = /\b(my fault|because of me|i caused|i made|i ruined|it's my|my responsibility for)\b/i;
+  if (personalizationPatterns.test(text)) {
+    indicators.push('personalization');
+  }
+  
+  const mindReadingPatterns = /\b(they think|they believe|they feel|they know|they're thinking|everyone thinks|people think)\b/i;
+  if (mindReadingPatterns.test(text)) {
+    indicators.push('mind reading');
+  }
+  
+  const fortuneTellingPatterns = /\b(will never|will always|will definitely|can't change|never get better|always be|going to fail)\b/i;
+  if (fortuneTellingPatterns.test(text)) {
+    indicators.push('fortune telling');
+  }
+  
+  const labelingPatterns = /\b(i am|i'm|i'm a|you are|you're|they are|they're)\s+(a|an)?\s*(loser|failure|stupid|idiot|bad|terrible|horrible|worthless|pathetic)\b/i;
+  if (labelingPatterns.test(text)) {
+    indicators.push('labeling');
+  }
+  
+  const overgeneralizationPatterns = /\b(always|never|all the time|every time|everyone|nobody|everything)\b/i;
+  if (overgeneralizationPatterns.test(text) && indicators.length === 0) {
+    // Only if we haven't already detected all-or-nothing
+    indicators.push('overgeneralization');
+  }
+  
+  // Only use CBT if at least one clear indicator is present
+  // AND user is showing distress (not just casual conversation)
+  const shouldUseCBT = indicators.length > 0 && hasDistress;
+  
+  return { shouldUseCBT, indicators };
+}
+
 function buildSelectiveMemorySnippet(memoryData: UserMemory, intent: ChatIntent): string {
   if (!memoryData) return '';
 
@@ -1049,6 +1117,134 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
     // - Personalization rules and profile context
     // This ensures maximum chat awareness while keeping performance optimal
     
+    // Detect if CBT techniques would be helpful (only when necessary)
+    const cbtDetection = detectCBTIndicators(message, recentMessages);
+    let cbtContext = '';
+    if (cbtDetection.shouldUseCBT && cbtDetection.indicators.length > 0) {
+      cbtContext = `
+
+--- CBT MODE ACTIVATED (only when necessary) ---
+The user is showing signs that would benefit from CBT techniques:
+- Cognitive distortions detected: ${cbtDetection.indicators.join(', ')}
+- User is experiencing distress that CBT can help address
+
+When responding:
+1. Gently identify the cognitive distortion (if clear) without being clinical or using CBT jargon
+2. Ask a Socratic question naturally to help them see alternative perspectives (e.g., "What evidence supports that thought? What might suggest otherwise?")
+3. Help them find evidence FOR and AGAINST their thought in a conversational way
+4. Guide toward a balanced thought naturally, not mechanically - make it feel like a friend helping them think through it
+5. Keep it conversational and warm - avoid therapy jargon like "cognitive distortion" or "reframing" unless they specifically ask
+
+Example approach (natural, not clinical):
+"I hear that you're feeling [emotion]. That thought [acknowledge their pattern gently] - what evidence do you have that supports it? And what might suggest otherwise?"
+
+Remember: Stay in Hope's warm, human voice. CBT techniques should feel natural, not mechanical or clinical.
+`;
+      logger.info(`CBT mode activated for user ${userId}: ${cbtDetection.indicators.join(', ')}`);
+    }
+
+    // Analyze user patterns for understanding and empathy
+    let patternContext = '';
+    try {
+      const { analyzeUserPatterns, formatPatternsForAI } = require('../services/patternAnalysis/patternAnalyzer');
+      const patterns = await analyzeUserPatterns(userId);
+      
+      if (patterns.topPatterns.length > 0) {
+        patternContext = formatPatternsForAI(patterns);
+        logger.debug(`Pattern context added for user ${userId}: ${patterns.topPatterns.length} patterns identified`);
+      }
+    } catch (error: any) {
+      logger.warn('Failed to analyze user patterns:', error.message);
+      // Continue without pattern context if it fails
+    }
+
+    // Get active interventions for time awareness
+    // ALWAYS include time context (current date/time) even if no active interventions
+    // Use user's timezone if available for accurate time display
+    let timeAwarenessContext = '';
+    try {
+      const { getActiveInterventions, formatInterventionContextForAI } = require('../services/interventions/interventionProgressService');
+      const activeInterventions = await getActiveInterventions(userId);
+      
+      // Try to get user's timezone from profile
+      let userTimezone: string | undefined;
+      try {
+        const { UserProfile } = require('../models/UserProfile');
+        const profile = await UserProfile.findOne({ userId }).lean();
+        userTimezone = profile?.availability?.timezone;
+      } catch (profileError: any) {
+        logger.debug(`Could not fetch user timezone: ${profileError.message}`);
+        // Continue without timezone - will use UTC
+      }
+      
+      // Always format context (includes current time even if no interventions)
+      // Pass user timezone for accurate time display
+      timeAwarenessContext = formatInterventionContextForAI(activeInterventions, userTimezone);
+      
+      if (activeInterventions.length > 0) {
+        logger.debug(`Time awareness context added for user ${userId}: ${activeInterventions.length} active interventions + current time${userTimezone ? ` (timezone: ${userTimezone})` : ' (UTC)'}`);
+      } else {
+        logger.debug(`Time awareness context added for user ${userId}: current time only (no active interventions)${userTimezone ? ` (timezone: ${userTimezone})` : ' (UTC)'}`);
+      }
+    } catch (error: any) {
+      logger.warn('Failed to get active interventions for time awareness:', error.message);
+      // Continue without time awareness if it fails
+    }
+
+    // Detect intervention needs (sleep, depression, etc.) and suggest structured interventions
+    // WITH GATING: Only suggest if contextually appropriate (time, seriousness, recent suggestions)
+    let interventionContext = '';
+    try {
+      const { detectInterventionNeeds, generateInterventionSuggestions } = require('../services/interventions/interventionDetector');
+      const detectedNeed = detectInterventionNeeds(message, recentMessages, memoryData.moodPatterns);
+      
+      if (detectedNeed.type && detectedNeed.confidence > 0.6) {
+        // Apply gating to ALL intervention types - check if suggestion is contextually appropriate
+        // Gating requires at least 2 of 3 criteria: (1) Time appropriateness, (2) Mention seriousness, (3) No recent suggestions
+        const { shouldSuggestIntervention } = require('../services/interventions/interventionGating');
+        
+        const gatingResult = await shouldSuggestIntervention(userId, detectedNeed.type, message, recentMessages);
+        
+        if (gatingResult.shouldSuggest) {
+          // Pass userId for personalization - backend will prioritize interventions that worked well before
+          const suggestions = await generateInterventionSuggestions(detectedNeed, 'beginner', userId);
+          
+          if (suggestions.length > 0) {
+            // Store intervention suggestion in metadata (for frontend to display)
+            const topSuggestion = suggestions[0];
+            interventionContext = `
+
+--- INTERVENTION SUGGESTION (Gated - Contextually Appropriate) ---
+The user may benefit from structured interventions:
+- Detected: ${detectedNeed.type} (${detectedNeed.severity} severity)
+- Suggested intervention: "${topSuggestion.interventionName}"
+- Why now: ${topSuggestion.whyNow}
+- Gating: Passed (${gatingResult.passedCriteria}/${gatingResult.totalCriteria} criteria)
+
+Context:
+- Time: ${gatingResult.context.timeOfDay || 'N/A'}
+- Seriousness: ${gatingResult.context.mentionSeriousness || 'N/A'}
+- Recent suggestions: ${gatingResult.context.recentSuggestions || 'N/A'}
+
+When appropriate, you can:
+1. Acknowledge their struggle with empathy
+2. Briefly mention that structured interventions can help (don't be pushy)
+3. Offer to guide them through a specific intervention if they're interested
+4. Example: "I hear how difficult this is. There are evidence-based techniques that can help with [sleep/depression/etc]. Would you like me to walk you through one?"
+
+Keep it optional and supportive - don't force interventions.
+`;
+            logger.info(`Intervention detected and gated for user ${userId}: ${detectedNeed.type} (confidence: ${detectedNeed.confidence}, gating: ${gatingResult.reason})`);
+          }
+        } else {
+          logger.debug(`Intervention suggestion gated out for user ${userId}: ${detectedNeed.type} - ${gatingResult.reason}`);
+        }
+      }
+    } catch (error: any) {
+      logger.warn('Failed to detect intervention needs or apply gating:', error.message);
+      // Continue without intervention context if detection/gating fails
+    }
+    
     // Build final prompt with personalization
     const fullHistory = conversationHistory + `\n\nUser: ${message}`;
     
@@ -1065,7 +1261,7 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
     const hopePrompt = buildHopePrompt(
       currentMood, 
       fullHistory, 
-      `${combinedContext}${defaultVerbosity}`
+      `${combinedContext}${patternContext}${cbtContext}${interventionContext}${timeAwarenessContext}${defaultVerbosity}`
     );
     const promptTokens = estimateTokens(hopePrompt);
     logger.info(`AI context optimized: ${promptTokens} tokens (~${Math.ceil(promptTokens / 4)} chars) - includes summary + recent messages + persistent memory + personalization`);
@@ -1119,7 +1315,37 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
     await session.save();
     logger.info(`Session saved successfully - all ${session.messages.length} messages preserved in database (truncation only applied to AI context)`);
 
-    // Generate personalized suggestions
+    // Detect intervention needs and get structured intervention suggestions
+    let interventionSuggestions: Array<{
+      interventionId: string;
+      interventionName: string;
+      description: string;
+      whyNow: string;
+      nextSteps: string[];
+    }> = [];
+    
+    try {
+      const { detectInterventionNeeds, generateInterventionSuggestions } = require('../services/interventions/interventionDetector');
+      const detectedNeed = detectInterventionNeeds(message, recentMessages, memoryData.moodPatterns);
+      
+      if (detectedNeed.type && detectedNeed.confidence > 0.6) {
+        // Pass userId for personalization based on effectiveness ratings
+        const interventions = await generateInterventionSuggestions(detectedNeed, 'beginner', userId);
+        interventionSuggestions = interventions.map((int: { interventionId: string; interventionName: string; description: string; whyNow: string; nextSteps: string[] }) => ({
+          interventionId: int.interventionId,
+          interventionName: int.interventionName,
+          description: int.description,
+          whyNow: int.whyNow,
+          nextSteps: int.nextSteps
+        }));
+        logger.info(`Intervention suggestions generated for user ${userId}: ${interventions.length} interventions (type: ${detectedNeed.type})`);
+      }
+    } catch (error: any) {
+      logger.warn('Failed to generate intervention suggestions:', error.message);
+      // Continue without intervention suggestions if detection fails
+    }
+
+    // Generate personalized suggestions (existing general suggestions)
     const personalizedSuggestions = await generatePersonalizedSuggestions(
       memoryData,
       message,
@@ -1143,6 +1369,7 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
       response: aiMessage,
       sessionId: session.sessionId,
       suggestions: personalizedSuggestions,
+      interventionSuggestions: interventionSuggestions, // Structured interventions (sleep, depression, etc.)
       isFailover: isFailover, // Let frontend know if this was a fallback
       memoryContext: {
         hasJournalEntries: memoryData.journalEntries.length > 0,

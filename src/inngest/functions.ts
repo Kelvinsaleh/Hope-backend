@@ -106,10 +106,48 @@ export const activityCompletionHandler = inngest.createFunction(
   }
 );
 
+// Journal reminder function - runs daily to remind users who haven't journaled in 3+ days
+export const journalReminderHandler = inngest.createFunction(
+  { id: "journal-reminder-handler" },
+  { cron: "0 10 * * *" }, // Run daily at 10 AM UTC
+  async ({ step }) => {
+    // Import and run the journal reminder check
+    const { checkAndSendJournalReminders } = await import('../jobs/journalReminderJob');
+    
+    await step.run("check-journal-reminders", async () => {
+      return await checkAndSendJournalReminders();
+    });
+
+    return {
+      message: "Journal reminder check completed",
+    };
+  }
+);
+
+// Intervention reminder function - runs daily to remind users to continue active interventions
+export const interventionReminderHandler = inngest.createFunction(
+  { id: "intervention-reminder-handler" },
+  { cron: "0 14 * * *" }, // Run daily at 2 PM UTC
+  async ({ step }) => {
+    // Import and run the intervention reminder check
+    const { checkAndSendInterventionReminders } = await import('../jobs/interventionReminderJob');
+    
+    await step.run("check-intervention-reminders", async () => {
+      return await checkAndSendInterventionReminders();
+    });
+
+    return {
+      message: "Intervention reminder check completed",
+    };
+  }
+);
+
 // Add all functions to the exported array
 export const functions = [
   therapySessionHandler,
   moodTrackingHandler,
   activityCompletionHandler,
+  journalReminderHandler,
+  interventionReminderHandler,
   ...aiFunctions,
 ];

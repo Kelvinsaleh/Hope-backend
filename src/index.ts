@@ -38,6 +38,8 @@ import { CommunitySpace } from './models/Community';
 import { startWeeklyReportScheduler } from './jobs/weeklyReportScheduler';
 import { startPersonalizationAnalysisJob } from './jobs/personalizationAnalysisJob';
 import { startSubscriptionMaintenanceJob } from './jobs/subscriptionMaintenance';
+import { startJournalReminderJob } from './jobs/journalReminderJob';
+import { startInterventionReminderJob } from './jobs/interventionReminderJob';
 
 // Load environment variables
 dotenv.config();
@@ -295,6 +297,22 @@ connectDB()
       logger.info('Subscription maintenance job started');
     } catch (e) {
       logger.warn('Failed to start subscription maintenance job', e);
+    }
+
+    // Start journal reminder job (daily reminders for users who haven't journaled in 3+ days)
+    try {
+      startJournalReminderJob();
+      logger.info('Journal reminder job started');
+    } catch (e) {
+      logger.warn('Failed to start journal reminder job', e);
+    }
+
+    // Start intervention reminder job
+    try {
+      startInterventionReminderJob();
+      logger.info('Intervention reminder job started');
+    } catch (e) {
+      logger.warn('Failed to start intervention reminder job', e);
     }
     
     app.listen(PORT, () => {
