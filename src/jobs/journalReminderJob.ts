@@ -28,7 +28,7 @@ export async function checkAndSendJournalReminders(): Promise<void> {
 
     for (const user of activeUsers) {
       try {
-        const userId = new Types.ObjectId(user._id);
+        const userId = new Types.ObjectId(user._id?.toString() || user._id);
         
         // Check user's last journal entry
         const lastJournalEntry = await JournalEntry.findOne({ userId })

@@ -148,9 +148,9 @@ async function checkRecentSuggestions(
       createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, // Last 7 days
     })
       .sort({ createdAt: -1 })
-      .lean();
+      .lean() as any;
 
-    if (recentProgress) {
+    if (recentProgress && !Array.isArray(recentProgress) && recentProgress.createdAt) {
       const daysAgo = Math.floor(
         (Date.now() - new Date(recentProgress.createdAt).getTime()) / (1000 * 60 * 60 * 24)
       );

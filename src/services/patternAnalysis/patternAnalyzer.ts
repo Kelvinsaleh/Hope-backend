@@ -1,9 +1,10 @@
 import { Types } from 'mongoose';
 import { LongTermMemoryModel } from '../../models/LongTermMemory';
 import { JournalEntry } from '../../models/JournalEntry';
-import { Mood } from '../../models/Mood';
+import { Mood, IMood } from '../../models/Mood';
 import { InterventionProgress } from '../../models/InterventionProgress';
 import { Session } from '../../models/Session';
+import { ChatSession, IChatSession } from '../../models/ChatSession';
 import { logger } from '../../utils/logger';
 
 /**
@@ -109,20 +110,20 @@ async function analyzeMoodPatterns(userId: Types.ObjectId): Promise<UserPattern[
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const moods = await MoodEntry.find({
+    const moods = await Mood.find({
       userId,
       createdAt: { $gte: thirtyDaysAgo },
     })
       .sort({ createdAt: -1 })
-      .lean();
+      .lean() as IMood[];
 
     if (moods.length < 5) {
       return patterns; // Not enough data
     }
 
     // Mood.score is 0-100, convert to 1-10 scale for consistency
-    const moodValues = moods.map(m => (m.score || 50) / 10);
-    const avgMood = moodValues.reduce((a, b) => a + b, 0) / moodValues.length;
+    const moodValues = moods.map((m: IMood) => (m.score || 50) / 10);
+    const avgMood = moodValues.reduce((a: number, b: number) => a + b, 0) / moodValues.length;
     const moodRange = Math.max(...moodValues) - Math.min(...moodValues);
 
     // Pattern: Consistently low mood
@@ -150,18 +151,18 @@ async function analyzeMoodPatterns(userId: Types.ObjectId): Promise<UserPattern[
     }
 
     // Pattern: Morning vs evening mood
-    const morningMoods = moods.filter(m => {
+    const morningMoods = moods.filter((m: IMood) => {
       const hour = new Date(m.createdAt || m.timestamp).getHours();
       return hour >= 6 && hour < 12;
-    }).map(m => (m.score || 50) / 10);
-    const eveningMoods = moods.filter(m => {
+    }).map((m: IMood) => (m.score || 50) / 10);
+    const eveningMoods = moods.filter((m: IMood) => {
       const hour = new Date(m.createdAt || m.timestamp).getHours();
       return hour >= 18 || hour < 6;
-    }).map(m => (m.score || 50) / 10);
+    }).map((m: IMood) => (m.score || 50) / 10);
 
     if (morningMoods.length >= 3 && eveningMoods.length >= 3) {
-      const morningAvg = morningMoods.reduce((a, b) => a + b, 0) / morningMoods.length;
-      const eveningAvg = eveningMoods.reduce((a, b) => a + b, 0) / eveningMoods.length;
+      const morningAvg = morningMoods.reduce((a: number, b: number) => a + b, 0) / morningMoods.length;
+      const eveningAvg = eveningMoods.reduce((a: number, b: number) => a + b, 0) / eveningMoods.length;
       const diff = Math.abs(morningAvg - eveningAvg);
 
       if (diff > 2) {
@@ -420,9 +421,9 @@ async function analyzeChatPatterns(userId: Types.ObjectId): Promise<UserPattern[
 
   try {
     const sessions = await ChatSession.find({ userId })
-      .sort({ createdAt: -1 })
+      .sort({ startTime: -1 })
       .limit(20)
-      .lean();
+      .lean() as IChatSession[];
 
     if (sessions.length < 5) {
       return patterns;
@@ -430,12 +431,12 @@ async function analyzeChatPatterns(userId: Types.ObjectId): Promise<UserPattern[
 
     // Pattern: Message length
     const messageLengths = sessions
-      .flatMap(s => s.messages || [])
-      .filter(m => m.role === 'user')
-      .map(m => (m.content || '').length);
+      .flatMap((s: IChatSession) => s.messages || [])
+      .filter((m: any) => m.role === 'user')
+      .map((m: any) => (m.content || '').length);
 
     if (messageLengths.length >= 10) {
-      const avgLength = messageLengths.reduce((a, b) => a + b, 0) / messageLengths.length;
+      const avgLength = messageLengths.reduce((a: number, b: number) => a + b, 0) / messageLengths.length;
       
       if (avgLength < 50) {
         patterns.push({
@@ -459,8 +460,8 @@ async function analyzeChatPatterns(userId: Types.ObjectId): Promise<UserPattern[
     }
 
     // Pattern: Communication frequency
-    const recentSessions = sessions.filter(s => {
-      const daysAgo = (Date.now() - new Date(s.createdAt).getTime()) / (1000 * 60 * 60 * 24);
+    const recentSessions = sessions.filter((s: IChatSession) => {
+      const daysAgo = (Date.now() - new Date(s.startTime).getTime()) / (1000 * 60 * 60 * 24);
       return daysAgo <= 14;
     });
 

@@ -333,7 +333,7 @@ export async function generateInterventionSuggestions(
   
   // Get user's intervention effectiveness history for personalization (if userId provided)
   let effectivenessMap = new Map<string, number>(); // interventionId -> average effectiveness
-  if (userId) {
+  if (userId && detectedNeed.type) {
     try {
       const effectivenessHistory = await getInterventionEffectiveness(userId, detectedNeed.type);
       effectivenessHistory.forEach(item => {

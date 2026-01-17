@@ -23,14 +23,14 @@ export async function shouldPromptForEffectiveness(
       status: 'completed',
     })
       .sort({ completedAt: -1 })
-      .lean();
+      .lean() as any;
 
-    if (!progress) {
+    if (!progress || Array.isArray(progress)) {
       return { shouldPrompt: false, reason: 'Intervention not completed' };
     }
 
     // If already rated, don't prompt again (unless we want to prompt for long-term effectiveness)
-    if (progress.progress.effectivenessRating && progress.progress.effectivenessRating > 0) {
+    if (progress.progress?.effectivenessRating && progress.progress.effectivenessRating > 0) {
       return { shouldPrompt: false, reason: 'Already rated' };
     }
 

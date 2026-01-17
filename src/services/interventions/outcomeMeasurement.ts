@@ -102,9 +102,9 @@ export async function measureInterventionOutcome(
       interventionId,
     })
       .sort({ startedAt: -1 })
-      .lean();
+      .lean() as any;
 
-    if (!progress) {
+    if (!progress || Array.isArray(progress)) {
       return null;
     }
 
@@ -135,9 +135,9 @@ export async function measureInterventionOutcome(
       : null;
 
     return {
-      interventionId: progress.interventionId,
-      interventionName: progress.interventionName,
-      interventionType: progress.interventionType,
+      interventionId: progress.interventionId as string,
+      interventionName: progress.interventionName as string,
+      interventionType: progress.interventionType as string,
       moodBefore,
       moodAfter,
       moodImprovement,
