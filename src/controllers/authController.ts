@@ -135,6 +135,16 @@ export const login = async (req: Request, res: Response) => {
         });
     }
 
+    // Check MongoDB connection before querying
+    const mongoose = require('mongoose');
+    if (mongoose.connection.readyState !== 1) {
+      logger.error('Database not connected - readyState:', mongoose.connection.readyState);
+      return res.status(503).json({
+        success: false,
+        message: "Database connection unavailable. Please try again in a moment."
+      });
+    }
+
     // Find user
     const user = await User.findOne({ email });
     if (!user) {

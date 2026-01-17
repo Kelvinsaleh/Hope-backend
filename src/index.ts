@@ -274,6 +274,21 @@ const autoSeedCommunity = async () => {
 // Start server
 connectDB()
   .then(async () => {
+    // Wait for DB to be fully ready before starting server
+    const mongoose = require('mongoose');
+    if (mongoose.connection.readyState !== 1) {
+      logger.error('Database connection not ready. ReadyState:', mongoose.connection.readyState);
+      throw new Error('Database connection failed');
+    }
+    
+    // Verify connection with a simple ping
+    try {
+      await mongoose.connection.db.admin().ping();
+      logger.info('✅ Database connection verified (ping successful)');
+    } catch (pingError: any) {
+      logger.error('Database ping failed:', pingError);
+      throw new Error('Database connection verification failed');
+    }
     // Auto-seed community spaces on startup
     await autoSeedCommunity();
     // Start weekly report scheduler
