@@ -1,6 +1,11 @@
 import mongoose from "mongoose";
 import { logger } from "./logger";
 
+// Disable Mongoose buffering globally to fail fast if not connected
+// This prevents operations from being queued indefinitely when DB is disconnected
+mongoose.set('bufferCommands', false);
+mongoose.set('bufferMaxEntries', 0);
+
 const MONGODB_URI = process.env.MONGODB_URI;
 
 export const connectDB = async () => {
@@ -24,12 +29,9 @@ export const connectDB = async () => {
       connectTimeoutMS: 60000, // Connection timeout - 60 seconds
       maxPoolSize: 10, // Maximum number of connections in the pool
       minPoolSize: 1, // Minimum number of connections in the pool (reduced for faster startup)
-      bufferMaxEntries: 0, // Disable mongoose buffering; throw error immediately if not connected
-      bufferCommands: false, // Disable mongoose buffering
+      // Note: bufferMaxEntries and bufferCommands are Mongoose model-level options, not connection options
       retryWrites: true, // Enable retry writes for replica sets
       retryReads: true, // Enable retry reads for replica sets
-      // Add heartbeat to keep connection alive
-      heartbeatFrequencyMS: 10000, // Send heartbeat every 10 seconds
       // Disable strict mode for connection
       strictQuery: false,
     };
@@ -64,11 +66,16 @@ export const connectDB = async () => {
     
     // Verify connection with a ping
     try {
-      await mongoose.connection.db.admin().ping();
+      const db = mongoose.connection.db;
+      if (!db) {
+        throw new Error("Database connection object is undefined");
+      }
+      
+      await db.admin().ping();
       logger.info("✅ Connected to MongoDB successfully (ping verified)");
       
       // Log connection details
-      const dbName = mongoose.connection.db?.databaseName;
+      const dbName = db.databaseName;
       const host = mongoose.connection.host;
       logger.info(`Database: ${dbName}, Host: ${host}`);
     } catch (pingError: any) {

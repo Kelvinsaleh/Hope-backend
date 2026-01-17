@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { emailService } from "../services/email.service";
 import { logger } from "../utils/logger";
+import { isDBConnected, waitForDBConnection } from "../utils/db";
 
 // Helper function to generate 6-digit OTP
 const generateOTP = (): string => {
@@ -135,18 +136,38 @@ export const login = async (req: Request, res: Response) => {
         });
     }
 
-    // Check MongoDB connection before querying
-    const mongoose = require('mongoose');
-    if (mongoose.connection.readyState !== 1) {
-      logger.error('Database not connected - readyState:', mongoose.connection.readyState);
-      return res.status(503).json({
-        success: false,
-        message: "Database connection unavailable. Please try again in a moment."
-      });
+    // Ensure MongoDB connection is ready before querying
+    if (!isDBConnected()) {
+      logger.warn('Database not connected, waiting for connection...');
+      const connected = await waitForDBConnection(10000); // Wait up to 10 seconds
+      
+      if (!connected) {
+        logger.error('Database connection timeout during login');
+        return res.status(503).json({
+          success: false,
+          message: "Database connection unavailable. Please try again in a moment."
+        });
+      }
     }
 
-    // Find user
-    const user = await User.findOne({ email });
+    // Find user - with explicit error handling for connection issues
+    let user;
+    try {
+      user = await User.findOne({ email }).maxTimeMS(5000); // 5 second query timeout
+    } catch (dbError: any) {
+      logger.error('Database query error during login:', dbError);
+      
+      // Check if it's a connection/timeout error
+      if (dbError.message?.includes('buffering') || dbError.message?.includes('timeout')) {
+        return res.status(503).json({
+          success: false,
+          message: "Database connection issue. Please try again in a moment."
+        });
+      }
+      
+      // Re-throw other errors to be caught by outer try-catch
+      throw dbError;
+    }
     if (!user) {
       return res.status(401).json({ 
         success: false,
