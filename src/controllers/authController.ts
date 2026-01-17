@@ -235,6 +235,10 @@ export const login = async (req: Request, res: Response) => {
         id: user._id, // Add id field for compatibility
         name: user.name,
         email: user.email,
+        tier: user.trialEndsAt && new Date() < new Date(user.trialEndsAt) ? 'premium' : (user.subscription?.tier || 'free'),
+        trialEndsAt: user.trialEndsAt?.toISOString(),
+        trialStartedAt: (user as any)?.trialStartedAt ? new Date((user as any).trialStartedAt).toISOString() : null,
+        trialUsed: (user as any)?.trialUsed === true,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
       },
@@ -417,6 +421,7 @@ export const me = async (req: Request, res: Response) => {
       subscription: user.subscription,
       trialEndsAt,
       trialStartedAt,
+      trialUsed: (user as any)?.trialUsed === true,
     };
 
     res.json({ 

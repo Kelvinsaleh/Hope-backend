@@ -205,10 +205,15 @@ export const uploadMeditation = async (req: Request, res: Response) => {
       });
     }
     
-    const { title, description, duration, category } = req.body;
-    
-    // DEBUG: Log environment variable for blob token
-    console.log('Blob Token from ENV:', process.env.BLOB_READ_WRITE_TOKEN ? '[set]' : '[empty or not set]');
+    const { title, description, duration, category, isPremium, tags } = req.body;
+
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      logger.error("BLOB_READ_WRITE_TOKEN is not set");
+      return res.status(500).json({
+        success: false,
+        error: "Upload service is not configured. Please set BLOB_READ_WRITE_TOKEN."
+      });
+    }
     
     // Upload to Vercel Blob (modern API)
     const pathname = `meditations/${Date.now()}_${req.file.originalname.replace(/\s+/g, '_')}`;
@@ -226,14 +231,30 @@ export const uploadMeditation = async (req: Request, res: Response) => {
     const headers = await generateHeaders(title, description, blob.url);
     const subtitles = await generateSubtitles(blob.url, duration);
     
+    let parsedTags: string[] = [];
+    if (Array.isArray(tags)) {
+      parsedTags = tags.map((tag) => String(tag).trim()).filter(Boolean);
+    } else if (typeof tags === 'string' && tags.trim().length > 0) {
+      try {
+        const asJson = JSON.parse(tags);
+        if (Array.isArray(asJson)) {
+          parsedTags = asJson.map((tag) => String(tag).trim()).filter(Boolean);
+        } else {
+          parsedTags = tags.split(',').map((tag) => tag.trim()).filter(Boolean);
+        }
+      } catch {
+        parsedTags = tags.split(',').map((tag) => tag.trim()).filter(Boolean);
+      }
+    }
+
     const meditation = new Meditation({
       title: title || "Untitled",
       description: description || "",
-      duration: duration || 0,
+      duration: Number(duration) || 0,
       audioUrl: blob.url,
       category: category || "general",
-      isPremium: false,
-      tags: [],
+      isPremium: String(isPremium) === 'true',
+      tags: parsedTags,
       headers: headers,
       subtitles: subtitles,
       uploadedAt: new Date()
