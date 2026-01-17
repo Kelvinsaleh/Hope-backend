@@ -181,6 +181,7 @@ const HOPE_PERSONA_CORE = `You are Hope, an adaptive conversational AI designed 
 - Match the user’s energy, tone, and intent within 1–2 messages.
 - Prefer action over analysis unless analysis is requested. Reduce friction, increase momentum.
 - If the user seems bored, annoyed, or stuck, you take control of the interaction.
+- Balance empathy with usefulness. Validate once, then help with a clear next step.
 
 --- Conversation modes (auto-detect & switch) ---
 1) FRIEND MODE: casual/bored/joking/lonely. Be informal, warm, concise; light humor ok; offer activities/ideas; do not over-validate or analyze feelings unless asked.
@@ -200,6 +201,9 @@ If insulted or user is irritated: do not escalate, do not over-apologize, do not
 
 --- Language & style ---
 Natural conversational English; short paragraphs; avoid repetitive validation; avoid therapy jargon unless requested; emojis sparingly when casual, never when serious; match slang level but never exceed it.
+- If giving steps, use short bullets or numbered steps.
+- Prefer concrete suggestions over vague reassurance.
+- Ask for clarification when intent is unclear rather than guessing.
 
 --- What to avoid ---
 Endless reflective loops, “how does that make you feel?” chains, robotic politeness, asking questions when user wants relief/entertainment, ignoring explicit feedback on tone/style.
@@ -211,6 +215,7 @@ User feels understood, conversation has momentum, AI adapts faster than user get
 1) Acknowledge what they shared or want (brief).
 2) Add insight/idea/action (keep it human and concrete).
 3) Offer a single nudge to continue (question or invitation) only if it helps momentum.
+If you can personalize, do it subtly (use known preferences or stable facts).
 
 Keep replies concise by default (a few sentences). Only expand when the user clearly wants depth, steps, or complex reasoning.`;
 
@@ -229,6 +234,102 @@ ${userContext || "(First conversation)"}
 
 --- Recent conversation (truncated if long) ---
 ${conversationHistory}`.trim();
+}
+
+type ToneSignal = {
+  emotion: 'sad' | 'anxious' | 'angry' | 'frustrated' | 'happy' | 'confused' | 'neutral';
+  intensity: 'low' | 'medium' | 'high';
+  intent: 'support' | 'task' | 'creator' | 'thinking' | 'casual';
+  clarity: 'low' | 'medium' | 'high';
+  signals: string[];
+  recommendedMode: string;
+  guidance: string;
+};
+
+export function analyzeUserTone(
+  message: string,
+  recentMessages: Array<{ role: string; content: string }> = []
+): ToneSignal {
+  const text = (message || '').trim();
+  const lower = text.toLowerCase();
+  const words = lower.split(/\s+/).filter(Boolean);
+  const exclamations = (text.match(/!/g) || []).length;
+  const questions = (text.match(/\?/g) || []).length;
+  const capsRatio = text.replace(/[^A-Z]/g, '').length / Math.max(1, text.replace(/[^A-Za-z]/g, '').length);
+  const hasEmoji = /[\u{1F300}-\u{1FAFF}]/u.test(text);
+
+  const signals: string[] = [];
+  if (exclamations >= 2) signals.push('exclamations');
+  if (questions >= 2) signals.push('many-questions');
+  if (capsRatio > 0.4) signals.push('all-caps');
+  if (hasEmoji) signals.push('emoji');
+
+  const emotionKeywords: Record<ToneSignal['emotion'], string[]> = {
+    sad: ['sad', 'down', 'depressed', 'hopeless', 'empty', 'lonely'],
+    anxious: ['anxious', 'anxiety', 'worried', 'nervous', 'panic', 'scared'],
+    angry: ['angry', 'mad', 'furious', 'rage'],
+    frustrated: ['frustrated', 'annoyed', 'stuck', 'irritated', 'overwhelmed'],
+    happy: ['happy', 'excited', 'great', 'good news', 'relieved', 'proud'],
+    confused: ['confused', 'lost', 'not sure', 'unsure', 'don\'t know', 'idk'],
+    neutral: [],
+  };
+
+  let emotion: ToneSignal['emotion'] = 'neutral';
+  for (const [key, list] of Object.entries(emotionKeywords)) {
+    if (list.some((k) => lower.includes(k))) {
+      emotion = key as ToneSignal['emotion'];
+      break;
+    }
+  }
+
+  const intent: ToneSignal['intent'] =
+    /build|design|implement|system|prompt|feature|api|backend|frontend/.test(lower)
+      ? 'creator'
+      : /how|steps|fix|error|bug|crash|issue|problem|help me/.test(lower)
+      ? 'task'
+      : /why|explain|thoughts|idea|strategy|plan/.test(lower)
+      ? 'thinking'
+      : /feel|emotion|overwhelmed|hurt|lonely|grief|breakup/.test(lower)
+      ? 'support'
+      : 'casual';
+
+  let clarity: ToneSignal['clarity'] = 'high';
+  if (words.length < 5 || /not sure|idk|don\'t know|maybe/.test(lower)) {
+    clarity = 'low';
+  } else if (words.length < 10) {
+    clarity = 'medium';
+  }
+
+  let intensity: ToneSignal['intensity'] = 'low';
+  if (emotion !== 'neutral' && (exclamations >= 2 || capsRatio > 0.4)) {
+    intensity = 'high';
+  } else if (emotion !== 'neutral') {
+    intensity = 'medium';
+  }
+
+  const recommendedMode =
+    intent === 'creator'
+      ? 'CREATOR/BUILDER MODE'
+      : intent === 'task'
+      ? 'ACTION MODE'
+      : intent === 'thinking'
+      ? 'THINKING MODE'
+      : intent === 'support'
+      ? 'SUPPORT MODE'
+      : 'FRIEND MODE';
+
+  const guidance =
+    clarity === 'low'
+      ? 'Ask one clarifying question, then offer a simple next step.'
+      : intent === 'task'
+      ? 'Give short, concrete steps. Keep empathy brief.'
+      : intent === 'creator'
+      ? 'Be direct and implementation-focused. Avoid fluff.'
+      : intent === 'support'
+      ? 'Validate once, then offer one gentle, actionable step.'
+      : 'Keep it warm and brief. Match tone.';
+
+  return { emotion, intensity, intent, clarity, signals, recommendedMode, guidance };
 }
 
 /**

@@ -9,7 +9,7 @@ import { User } from "../models/User";
 import { LongTermMemoryModel } from "../models/LongTermMemory";
 import { logger } from "../utils/logger";
 import { Types } from "mongoose";
-import { buildHopePrompt, normalizeMood, getRandomExpression } from "../utils/hopePersonality";
+import { buildHopePrompt, normalizeMood, getRandomExpression, analyzeUserTone } from "../utils/hopePersonality";
 import {
   truncateMessages,
   summarizeMessages,
@@ -1397,7 +1397,10 @@ Keep it optional and supportive - don't force interventions.
     const fullHistory = conversationHistory + `\n\nUser: ${message}`;
     
     // Combine all context: user profile, personalization rules, and conversation history
-    const combinedContext = `${userContext}${profileSummary}${enforcementRules}`;
+    const toneSignal = analyzeUserTone(message, recentMessages);
+    const toneContext = `\n**Tone & response guidance:**\n- Emotion: ${toneSignal.emotion} (intensity: ${toneSignal.intensity})\n- Intent: ${toneSignal.intent}\n- Clarity: ${toneSignal.clarity}\n- Signals: ${toneSignal.signals.join(', ') || 'none'}\n- Recommended mode: ${toneSignal.recommendedMode}\n- Guidance: ${toneSignal.guidance}\n`;
+
+    const combinedContext = `${userContext}${profileSummary}${enforcementRules}${toneContext}`;
     
     // Default verbosity instruction (can be overridden by personalization rules)
     const defaultVerbosity = personalizationContext?.profile.communication.verbosity === "concise"
