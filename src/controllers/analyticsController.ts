@@ -195,10 +195,10 @@ export const generateWeeklyReport = async (req: Request, res: Response) => {
           userId,
           actorId: userId,
           type: 'billing', // Using billing type for system notifications
-          title: 'Your Weekly Report is Ready! 📊',
-          body: 'Your personalized weekly wellness report has been generated. Check your analytics to see insights about your patterns, progress, and what\'s working for you.',
           metadata: {
-            reportId: savedReport._id.toString(),
+            message: 'Your personalized weekly wellness report has been generated. Check your analytics to see insights about your patterns, progress, and what\'s working for you.',
+            reportType: 'weekly',
+            reportId: String(savedReport._id),
             weekStart: startDate.toISOString(),
             weekEnd: endDate.toISOString(),
           }
@@ -333,12 +333,14 @@ export async function gatherWeeklyData(userId: Types.ObjectId, startDate: Date, 
     try {
       const patterns = await analyzeUserPatterns(userId);
       // Filter for patterns relevant to this week or ongoing
-      patternInsights = patterns.slice(0, 5).map(p => ({
-        type: p.type,
-        pattern: p.pattern,
-        insight: p.insight,
-        confidence: p.confidence
-      }));
+      if (Array.isArray(patterns)) {
+        patternInsights = patterns.slice(0, 5).map((p: any) => ({
+          type: p.type,
+          pattern: p.pattern,
+          insight: p.insight,
+          confidence: p.confidence
+        }));
+      }
     } catch (patternError: any) {
       logger.warn('Failed to analyze patterns for weekly report:', patternError.message);
     }

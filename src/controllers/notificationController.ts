@@ -82,7 +82,7 @@ export async function createNotification(params: {
         body = `${actorName} mentioned you in a post`;
         break;
         case 'billing':
-          // Handle billing and system notifications (journal reminders, intervention reminders, effectiveness prompts, etc.)
+          // Handle billing and system notifications (journal reminders, intervention reminders, effectiveness prompts, weekly reports, etc.)
           if (metadata && metadata.reminderType === 'journal') {
             title = 'Journal Reminder';
             body = metadata.message || 'How has your day been? Take a moment to reflect.';
@@ -92,6 +92,9 @@ export async function createNotification(params: {
           } else if (metadata && metadata.promptType === 'reminder') {
             title = 'Continue Your Progress';
             body = metadata.message || `You're working on "${metadata.interventionName}" - ready to continue?`;
+          } else if (metadata && metadata.reportType === 'weekly') {
+            title = 'Your Weekly Report is Ready! 📊';
+            body = metadata.message || 'Your personalized weekly wellness report has been generated.';
           } else {
             title = 'Subscription Update';
             body = (metadata && metadata.message) || 'Your subscription status changed.';

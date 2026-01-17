@@ -36,9 +36,9 @@ export async function runWeeklyReportSchedulerOnce() {
           // Load user profile for personalization
           let profileSummary = '';
           try {
-            const profile = await UserProfile.findOne({ userId: user._id }).lean();
-            if (profile) {
-              profileSummary = `bio: ${(profile.bio || '').toString().slice(0, 200)}; goals: ${(profile.goals || []).slice(0, 5).join(', ')}; challenges: ${(profile.challenges || []).slice(0, 5).join(', ')}; communicationStyle: ${profile.communicationStyle || 'unknown'}`;
+            const profile = await UserProfile.findOne({ userId: user._id }).lean() as any;
+            if (profile && !Array.isArray(profile)) {
+              profileSummary = `bio: ${(profile.bio || '').toString().slice(0, 200)}; goals: ${(Array.isArray(profile.goals) ? profile.goals : []).slice(0, 5).join(', ')}; challenges: ${(Array.isArray(profile.challenges) ? profile.challenges : []).slice(0, 5).join(', ')}; communicationStyle: ${profile.communicationStyle || 'unknown'}`;
             }
           } catch (profileError: any) {
             logger.debug(`Could not load profile for weekly report: ${profileError.message}`);
@@ -70,19 +70,21 @@ export async function runWeeklyReportSchedulerOnce() {
           };
           const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-          const savedReport = await WeeklyReport.create({ userId: user._id, content, metadata, expiresAt });
+          // Convert user._id to ObjectId for WeeklyReport.create
+          const userIdObj = new Types.ObjectId(String(user._id));
+          const savedReport = await WeeklyReport.create({ userId: userIdObj, content, metadata, expiresAt });
           logger.info(`Generated scheduled weekly report for user ${user._id}`);
 
           // Send notification that report is ready
           try {
             await createNotification({
-              userId: user._id,
-              actorId: user._id,
+              userId: userIdObj,
+              actorId: userIdObj,
               type: 'billing', // Using billing type for system notifications
-              title: 'Your Weekly Report is Ready! 📊',
-              body: 'Your personalized weekly wellness report has been generated. Check your analytics to see insights about your patterns, progress, and what\'s working for you.',
               metadata: {
-                reportId: savedReport._id.toString(),
+                message: 'Your personalized weekly wellness report has been generated. Check your analytics to see insights about your patterns, progress, and what\'s working for you.',
+                reportType: 'weekly',
+                reportId: String(savedReport._id),
                 weekStart: startDate.toISOString(),
                 weekEnd: endDate.toISOString(),
               }
