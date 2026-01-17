@@ -142,23 +142,6 @@ export const interventionReminderHandler = inngest.createFunction(
   }
 );
 
-// Weekly report generator - runs every Saturday at 8 AM UTC
-export const weeklyReportHandler = inngest.createFunction(
-  { id: "weekly-report-handler" },
-  { cron: "0 8 * * 6" }, // Run every Saturday at 8 AM UTC
-  async ({ step }) => {
-    // Import and run the weekly report scheduler
-    const { runWeeklyReportSchedulerOnce } = await import('../jobs/weeklyReportScheduler');
-    
-    await step.run("generate-weekly-reports", async () => {
-      return await runWeeklyReportSchedulerOnce();
-    });
-
-    return {
-      message: "Weekly report generation completed",
-    };
-  }
-);
 
 // Add all functions to the exported array
 export const functions = [
@@ -167,6 +150,5 @@ export const functions = [
   activityCompletionHandler,
   journalReminderHandler,
   interventionReminderHandler,
-  weeklyReportHandler,
   ...aiFunctions,
 ];

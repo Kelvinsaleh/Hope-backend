@@ -614,6 +614,12 @@ async function streamAIResponse(
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+    res.flushHeaders?.();
+    // Send a comment to open the stream immediately
+    res.write(': stream-open\n\n');
+    if (typeof (res as any).flush === 'function') {
+      (res as any).flush();
+    }
 
     if (!genAI) {
       const fallback = generateFallbackResponse(prompt);
@@ -643,11 +649,17 @@ async function streamAIResponse(
           fullResponse += chunkText;
           // Send chunk to client
           res.write(`data: ${JSON.stringify({ type: 'chunk', content: chunkText })}\n\n`);
+          if (typeof (res as any).flush === 'function') {
+            (res as any).flush();
+          }
         }
       }
 
       // Send completion signal
       res.write(`data: ${JSON.stringify({ type: 'complete', content: fullResponse.trim() })}\n\n`);
+      if (typeof (res as any).flush === 'function') {
+        (res as any).flush();
+      }
       
       // Save to session asynchronously (don't block response)
       session.messages.push({
