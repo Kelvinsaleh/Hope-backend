@@ -278,17 +278,22 @@ connectDB()
     const mongoose = require('mongoose');
     if (mongoose.connection.readyState !== 1) {
       logger.error('Database connection not ready. ReadyState:', mongoose.connection.readyState);
-      throw new Error('Database connection failed');
+      throw new Error('Database connection failed - readyState is not 1');
     }
     
     // Verify connection with a simple ping
     try {
-      await mongoose.connection.db.admin().ping();
+      const db = mongoose.connection.db;
+      if (!db) {
+        throw new Error('Database connection object is undefined');
+      }
+      await db.admin().ping();
       logger.info('✅ Database connection verified (ping successful)');
     } catch (pingError: any) {
       logger.error('Database ping failed:', pingError);
-      throw new Error('Database connection verification failed');
+      throw new Error('Database connection verification failed - ping unsuccessful');
     }
+    
     // Auto-seed community spaces on startup
     await autoSeedCommunity();
     // Start weekly report scheduler
@@ -338,12 +343,22 @@ connectDB()
   })
   .catch((err) => {
     logger.error("Failed to connect to database:", err);
-    logger.warn("Starting server anyway for testing...");
-    app.listen(PORT, () => {
-      logger.info(`🚀 Server is running on port ${PORT} (without database)`);
-      logger.info(`📊 Health check: http://localhost:${PORT}/health`);
-      logger.info(` Environment: ${process.env.NODE_ENV || 'development'}`);
-    });
+    logger.error("Database connection is required. Server will not start.");
+    
+    // In production, exit if database connection fails
+    if (process.env.NODE_ENV === 'production') {
+      logger.error("Exiting due to database connection failure in production");
+      process.exit(1);
+    } else {
+      // In development, still start server but log warning
+      logger.warn("Starting server anyway for testing (development mode)...");
+      logger.warn("⚠️  Database-dependent endpoints will fail!");
+      app.listen(PORT, () => {
+        logger.info(`🚀 Server is running on port ${PORT} (without database)`);
+        logger.info(`📊 Health check: http://localhost:${PORT}/health`);
+        logger.info(` Environment: ${process.env.NODE_ENV || 'development'}`);
+      });
+    }
   });
 
 export default app;

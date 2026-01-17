@@ -139,7 +139,7 @@ export const login = async (req: Request, res: Response) => {
     // Ensure MongoDB connection is ready before querying
     if (!isDBConnected()) {
       logger.warn('Database not connected, waiting for connection...');
-      const connected = await waitForDBConnection(10000); // Wait up to 10 seconds
+      const connected = await waitForDBConnection(20000); // Wait up to 20 seconds
       
       if (!connected) {
         logger.error('Database connection timeout during login');
@@ -148,6 +148,20 @@ export const login = async (req: Request, res: Response) => {
           message: "Database connection unavailable. Please try again in a moment."
         });
       }
+    }
+    
+    // Double-check connection is still valid before querying
+    try {
+      const mongoose = require('mongoose');
+      if (mongoose.connection.db) {
+        await mongoose.connection.db.admin().ping();
+      }
+    } catch (pingError) {
+      logger.error('Database ping failed during login, connection may be stale');
+      return res.status(503).json({
+        success: false,
+        message: "Database connection issue. Please try again in a moment."
+      });
     }
 
     // Find user - with explicit error handling for connection issues
