@@ -1339,59 +1339,7 @@ Remember: Stay in Hope's warm, human voice. CBT techniques should feel natural, 
       // Continue without time awareness if it fails
     }
 
-    // Detect intervention needs (sleep, depression, etc.) and suggest structured interventions
-    // WITH GATING: Only suggest if contextually appropriate (time, seriousness, recent suggestions)
-    let interventionContext = '';
-    try {
-      const { detectInterventionNeeds, generateInterventionSuggestions } = require('../services/interventions/interventionDetector');
-      const detectedNeed = detectInterventionNeeds(message, recentMessages, memoryData.moodPatterns);
-      
-      if (detectedNeed.type && detectedNeed.confidence > 0.6) {
-        // Apply gating to ALL intervention types - check if suggestion is contextually appropriate
-        // Gating requires at least 2 of 3 criteria: (1) Time appropriateness, (2) Mention seriousness, (3) No recent suggestions
-        const { shouldSuggestIntervention } = require('../services/interventions/interventionGating');
-        
-        const gatingResult = await shouldSuggestIntervention(userId, detectedNeed.type, message, recentMessages);
-        
-        if (gatingResult.shouldSuggest) {
-          // Pass userId for personalization - backend will prioritize interventions that worked well before
-          const suggestions = await generateInterventionSuggestions(detectedNeed, 'beginner', userId);
-          
-          if (suggestions.length > 0) {
-            // Store intervention suggestion in metadata (for frontend to display)
-            const topSuggestion = suggestions[0];
-            interventionContext = `
-
---- INTERVENTION SUGGESTION (Gated - Contextually Appropriate) ---
-The user may benefit from structured interventions:
-- Detected: ${detectedNeed.type} (${detectedNeed.severity} severity)
-- Suggested intervention: "${topSuggestion.interventionName}"
-- Why now: ${topSuggestion.whyNow}
-- Gating: Passed (${gatingResult.passedCriteria}/${gatingResult.totalCriteria} criteria)
-
-Context:
-- Time: ${gatingResult.context.timeOfDay || 'N/A'}
-- Seriousness: ${gatingResult.context.mentionSeriousness || 'N/A'}
-- Recent suggestions: ${gatingResult.context.recentSuggestions || 'N/A'}
-
-When appropriate, you can:
-1. Acknowledge their struggle with empathy
-2. Briefly mention that structured interventions can help (don't be pushy)
-3. Offer to guide them through a specific intervention if they're interested
-4. Example: "I hear how difficult this is. There are evidence-based techniques that can help with [sleep/depression/etc]. Would you like me to walk you through one?"
-
-Keep it optional and supportive - don't force interventions.
-`;
-            logger.info(`Intervention detected and gated for user ${userId}: ${detectedNeed.type} (confidence: ${detectedNeed.confidence}, gating: ${gatingResult.reason})`);
-          }
-        } else {
-          logger.debug(`Intervention suggestion gated out for user ${userId}: ${detectedNeed.type} - ${gatingResult.reason}`);
-        }
-      }
-    } catch (error: any) {
-      logger.warn('Failed to detect intervention needs or apply gating:', error.message);
-      // Continue without intervention context if detection/gating fails
-    }
+    // Interventions are disabled by request (no detection/suggestions).
     
     // Build final prompt with personalization
     const fullHistory = conversationHistory + `\n\nUser: ${message}`;
@@ -1412,7 +1360,7 @@ Keep it optional and supportive - don't force interventions.
     const hopePrompt = buildHopePrompt(
       currentMood, 
       fullHistory, 
-      `${combinedContext}${patternContext}${cbtContext}${interventionContext}${timeAwarenessContext}${defaultVerbosity}`
+      `${combinedContext}${patternContext}${cbtContext}${timeAwarenessContext}${defaultVerbosity}`
     );
     const promptTokens = estimateTokens(hopePrompt);
     logger.info(`AI context optimized: ${promptTokens} tokens (~${Math.ceil(promptTokens / 4)} chars) - includes summary + recent messages + persistent memory + personalization`);
@@ -1466,35 +1414,7 @@ Keep it optional and supportive - don't force interventions.
     await session.save();
     logger.info(`Session saved successfully - all ${session.messages.length} messages preserved in database (truncation only applied to AI context)`);
 
-    // Detect intervention needs and get structured intervention suggestions
-    let interventionSuggestions: Array<{
-      interventionId: string;
-      interventionName: string;
-      description: string;
-      whyNow: string;
-      nextSteps: string[];
-    }> = [];
-    
-    try {
-      const { detectInterventionNeeds, generateInterventionSuggestions } = require('../services/interventions/interventionDetector');
-      const detectedNeed = detectInterventionNeeds(message, recentMessages, memoryData.moodPatterns);
-      
-      if (detectedNeed.type && detectedNeed.confidence > 0.6) {
-        // Pass userId for personalization based on effectiveness ratings
-        const interventions = await generateInterventionSuggestions(detectedNeed, 'beginner', userId);
-        interventionSuggestions = interventions.map((int: { interventionId: string; interventionName: string; description: string; whyNow: string; nextSteps: string[] }) => ({
-          interventionId: int.interventionId,
-          interventionName: int.interventionName,
-          description: int.description,
-          whyNow: int.whyNow,
-          nextSteps: int.nextSteps
-        }));
-        logger.info(`Intervention suggestions generated for user ${userId}: ${interventions.length} interventions (type: ${detectedNeed.type})`);
-      }
-    } catch (error: any) {
-      logger.warn('Failed to generate intervention suggestions:', error.message);
-      // Continue without intervention suggestions if detection fails
-    }
+    // Interventions are disabled by request (no structured suggestions).
 
     // Generate personalized suggestions (existing general suggestions)
     const personalizedSuggestions = await generatePersonalizedSuggestions(
@@ -1520,7 +1440,6 @@ Keep it optional and supportive - don't force interventions.
       response: aiMessage,
       sessionId: session.sessionId,
       suggestions: personalizedSuggestions,
-      interventionSuggestions: interventionSuggestions, // Structured interventions (sleep, depression, etc.)
       isFailover: isFailover, // Let frontend know if this was a fallback
       memoryContext: {
         hasJournalEntries: memoryData.journalEntries.length > 0,

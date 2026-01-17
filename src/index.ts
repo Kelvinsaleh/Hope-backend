@@ -39,7 +39,6 @@ import { startWeeklyReportScheduler } from './jobs/weeklyReportScheduler';
 import { startPersonalizationAnalysisJob } from './jobs/personalizationAnalysisJob';
 import { startSubscriptionMaintenanceJob } from './jobs/subscriptionMaintenance';
 import { startJournalReminderJob } from './jobs/journalReminderJob';
-import { startInterventionReminderJob } from './jobs/interventionReminderJob';
 
 // Load environment variables
 dotenv.config();
@@ -339,13 +338,7 @@ connectDB()
       logger.warn('Failed to start journal reminder job', e);
     }
 
-    // Start intervention reminder job
-    try {
-      startInterventionReminderJob();
-      logger.info('Intervention reminder job started');
-    } catch (e) {
-      logger.warn('Failed to start intervention reminder job', e);
-    }
+    // Interventions disabled by request (no reminder job).
     
     app.listen(PORT, () => {
       logger.info(`🚀 Server is running on port ${PORT}`);
