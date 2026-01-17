@@ -1,9 +1,11 @@
 import { User } from '../models/User';
 import { WeeklyReport } from '../models/WeeklyReport';
+import { UserProfile } from '../models/UserProfile';
 import { Types } from 'mongoose';
 import { logger } from '../utils/logger';
 import { generateAIWeeklyReport, generateFallbackWeeklyReport, gatherWeeklyData } from '../controllers/analyticsController';
 import { backgroundQueue } from './backgroundQueue';
+import { createNotification } from '../controllers/notificationController';
 
 const genAI = Boolean(process.env.GEMINI_API_KEY);
 
@@ -31,10 +33,21 @@ export async function runWeeklyReportSchedulerOnce() {
             return;
           }
 
+          // Load user profile for personalization
+          let profileSummary = '';
+          try {
+            const profile = await UserProfile.findOne({ userId: user._id }).lean();
+            if (profile) {
+              profileSummary = `bio: ${(profile.bio || '').toString().slice(0, 200)}; goals: ${(profile.goals || []).slice(0, 5).join(', ')}; challenges: ${(profile.challenges || []).slice(0, 5).join(', ')}; communicationStyle: ${profile.communicationStyle || 'unknown'}`;
+            }
+          } catch (profileError: any) {
+            logger.debug(`Could not load profile for weekly report: ${profileError.message}`);
+          }
+
           let content = '';
           try {
             if (genAI) {
-              content = await generateAIWeeklyReport(weeklyData, user.name || 'User', '');
+              content = await generateAIWeeklyReport(weeklyData, user.name || 'User', profileSummary);
             } else {
               content = generateFallbackWeeklyReport(weeklyData, user.name || 'User');
             }
@@ -46,12 +59,37 @@ export async function runWeeklyReportSchedulerOnce() {
           const metadata = {
             weekStart: startDate.toISOString(),
             weekEnd: endDate.toISOString(),
-            generatedAt: new Date().toISOString()
+            generatedAt: new Date().toISOString(),
+            dataPoints: {
+              moodEntries: weeklyData.moodEntries?.length || 0,
+              journalEntries: weeklyData.journalEntries?.length || 0,
+              meditationSessions: weeklyData.meditationSessions?.length || 0,
+              therapySessions: weeklyData.therapySessions?.length || 0,
+              activeInterventions: weeklyData.activeInterventions?.length || 0,
+            }
           };
           const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-          await WeeklyReport.create({ userId: user._id, content, metadata, expiresAt });
+          const savedReport = await WeeklyReport.create({ userId: user._id, content, metadata, expiresAt });
           logger.info(`Generated scheduled weekly report for user ${user._id}`);
+
+          // Send notification that report is ready
+          try {
+            await createNotification({
+              userId: user._id,
+              actorId: user._id,
+              type: 'billing', // Using billing type for system notifications
+              title: 'Your Weekly Report is Ready! 📊',
+              body: 'Your personalized weekly wellness report has been generated. Check your analytics to see insights about your patterns, progress, and what\'s working for you.',
+              metadata: {
+                reportId: savedReport._id.toString(),
+                weekStart: startDate.toISOString(),
+                weekEnd: endDate.toISOString(),
+              }
+            });
+          } catch (notifError: any) {
+            logger.warn(`Failed to send notification for weekly report (user ${user._id}):`, notifError.message);
+          }
         } catch (err) {
           logger.warn('Failed to generate scheduled weekly report for a user:', err);
         }
