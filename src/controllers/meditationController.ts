@@ -11,14 +11,143 @@ const genAI = new GoogleGenerativeAI(
   process.env.GEMINI_API_KEY || "AIzaSyCCRSas8dVBP3ye4ZY5RBPsYqw7m_2jro8"
 );
 
+const EXERCISE_MEDITATIONS = [
+  {
+    title: "Box Breathing",
+    description: "Anxiety and stress relief in a minute or two.",
+    durationSeconds: 64,
+    category: "Exercises",
+    tags: ["breathing", "anxiety", "stress", "calm"],
+    script:
+      "Let’s do box breathing: inhale for 4… hold for 4… exhale for 4… hold for 4. Repeat 4 rounds. Feel your body relax with each breath.",
+  },
+  {
+    title: "4-7-8 Breathing",
+    description: "Wind down for sleep and deep relaxation.",
+    durationSeconds: 57,
+    category: "Exercises",
+    tags: ["breathing", "sleep", "relaxation"],
+    script:
+      "We’ll do 4-7-8 breathing: inhale 4… hold 7… exhale 8. Let’s repeat 3 times. Imagine tension leaving your body with each exhale.",
+  },
+  {
+    title: "Diaphragmatic Breathing",
+    description: "Slow your breathing when panicking or overwhelmed.",
+    durationSeconds: 90,
+    category: "Exercises",
+    tags: ["breathing", "panic", "overwhelm"],
+    script:
+      "Place one hand on your chest, one on your belly. Breathe in slowly through your nose, feeling your belly rise. Exhale slowly through your mouth. Let’s do this for 5 deep breaths.",
+  },
+  {
+    title: "5-4-3-2-1 Grounding",
+    description: "Come back to the present when anxious.",
+    durationSeconds: 90,
+    category: "Exercises",
+    tags: ["grounding", "anxiety", "panic"],
+    script:
+      "Notice 5 things you see, 4 you feel, 3 you hear, 2 you smell, 1 you taste. Focus fully on each sense, bringing you back to the present.",
+  },
+  {
+    title: "Progressive Muscle Relaxation (Short)",
+    description: "Release tension and help your body relax.",
+    durationSeconds: 120,
+    category: "Exercises",
+    tags: ["relaxation", "sleep", "tension"],
+    script:
+      "Tense your shoulders for 3 seconds… release. Hands… release. Legs… release. Focus on the feeling of letting go. Continue head to toe in a short sweep.",
+  },
+  {
+    title: "Power Posture / Shake",
+    description: "Quick energy and mood lift.",
+    durationSeconds: 45,
+    category: "Exercises",
+    tags: ["energy", "mood", "motivation"],
+    script:
+      "Stand tall, stretch your arms wide, shake your hands and shoulders lightly. Take 3 deep breaths. Notice your energy rising.",
+  },
+  {
+    title: "Single-Sense Focus",
+    description: "Settle racing thoughts with one simple focus.",
+    durationSeconds: 45,
+    category: "Exercises",
+    tags: ["mindfulness", "focus", "calm"],
+    script:
+      "Focus on a single sense for 30 seconds. For example, listen closely to all the sounds around you. Let your mind settle on this one thing.",
+  },
+  {
+    title: "Micro Gratitude Exercise",
+    description: "A quick positivity reset.",
+    durationSeconds: 30,
+    category: "Exercises",
+    tags: ["gratitude", "mood", "positivity"],
+    script:
+      "Take a deep breath. Think of one thing you’re grateful for today. Hold it in your mind for 10 seconds. Let it create warmth inside.",
+  },
+  {
+    title: "Paced Counting Anchor",
+    description: "Ground yourself when you feel lost.",
+    durationSeconds: 45,
+    category: "Exercises",
+    tags: ["grounding", "panic", "overwhelm"],
+    script:
+      "Count slowly down from 20 to 0 while taking steady breaths. Let your mind focus on the numbers and the breath, grounding yourself.",
+  },
+] as const;
+
+let exercisesSeeded = false;
+
+async function ensureExerciseMeditations() {
+  if (exercisesSeeded) return;
+
+  const operations = EXERCISE_MEDITATIONS.map((exercise) => ({
+    updateOne: {
+      filter: { title: exercise.title },
+      update: {
+        $set: {
+          title: exercise.title,
+          description: exercise.description,
+          durationSeconds: exercise.durationSeconds,
+          duration: Math.max(1, Math.ceil(exercise.durationSeconds / 60)),
+          audioUrl: "",
+          category: exercise.category,
+          isPremium: false,
+          tags: exercise.tags,
+          script: exercise.script,
+          type: "exercise",
+        },
+      },
+      upsert: true,
+    },
+  }));
+
+  if (operations.length > 0) {
+    await Meditation.bulkWrite(operations);
+  }
+
+  exercisesSeeded = true;
+}
+
 // Get all meditations with search
 export const getMeditations = async (req: Request, res: Response) => {
   try {
     console.log("🎵 Meditation fetch request:", req.query);
     
-    const { search, category, isPremium, limit = 20, page = 1 } = req.query;
+    const { search, category, isPremium, limit = 20, page = 1, type } = req.query;
+
+    await ensureExerciseMeditations();
     
     const filter: any = {};
+
+    // Default to visual exercises only (hide guided meditations)
+    if (type) {
+      filter.type = type;
+    } else {
+      filter.$or = [
+        { type: "exercise" },
+        { type: { $exists: false }, category: "Exercises" }
+      ];
+    }
     
     // Add search functionality
     if (search) {
@@ -159,7 +288,18 @@ export const getMeditation = async (req: Request, res: Response) => {
 // Create a new meditation
 export const createMeditation = async (req: Request, res: Response) => {
   try {
-    const { title, description, duration, audioUrl, category, isPremium, tags } = req.body;
+    const {
+      title,
+      description,
+      duration,
+      durationSeconds,
+      audioUrl,
+      category,
+      isPremium,
+      tags,
+      script,
+      type,
+    } = req.body;
 
     if (!title || !description || !duration || !category) {
       return res.status(400).json({
@@ -171,10 +311,13 @@ export const createMeditation = async (req: Request, res: Response) => {
       title,
       description,
       duration,
+      durationSeconds,
       audioUrl,
       category,
       isPremium: isPremium || false,
       tags: tags || [],
+      script,
+      type,
     });
 
     await meditation.save();

@@ -4,10 +4,13 @@ export interface IMeditation extends Document {
   title: string;
   description: string;
   duration: number; // in minutes
+  durationSeconds?: number; // optional precise duration in seconds
   audioUrl: string;
   category: string;
   isPremium: boolean;
   tags: string[];
+  script?: string;
+  type?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,10 +32,13 @@ const MeditationSchema = new Schema<IMeditation>(
     title: { type: String, required: true },
     description: { type: String, required: true },
     duration: { type: Number, required: true },
+    durationSeconds: { type: Number },
     audioUrl: { type: String, required: true },
     category: { type: String, required: true },
     isPremium: { type: Boolean, default: false },
     tags: [{ type: String }],
+    script: { type: String },
+    type: { type: String, default: "guided" },
   },
   { timestamps: true }
 );

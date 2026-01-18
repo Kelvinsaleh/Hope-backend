@@ -142,6 +142,22 @@ function parseMemoryCommand(message: string): MemoryCommand | null {
     return { action: 'remember', subject: rememberMatch[1]?.trim() };
   }
 
+  // Softer/embedded phrasing (not necessarily at start)
+  const pleaseRememberMatch = text.match(/(?:please|can you|could you|would you|help me)\s+remember(?:\s+that)?\s+(.*)$/i);
+  if (pleaseRememberMatch) {
+    return { action: 'remember', subject: pleaseRememberMatch[1]?.trim() };
+  }
+
+  const rememberThisMatch = text.match(/(?:remember this|save this|save that)\s*:?[\s"]*(.*)$/i);
+  if (rememberThisMatch && rememberThisMatch[1]) {
+    return { action: 'remember', subject: rememberThisMatch[1]?.trim() };
+  }
+
+  const forgetThisMatch = text.match(/(?:forget this|forget that|remove this|remove that)\s*:?[\s"]*(.*)$/i);
+  if (forgetThisMatch) {
+    return { action: 'forget', subject: forgetThisMatch[1]?.trim() };
+  }
+
   return null;
 }
 
@@ -1742,7 +1758,10 @@ async function gatherUserMemory(userId: string): Promise<UserMemory> {
  */
 export const getUserMemories = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).userId;
+    const userId =
+      req.user?._id?.toString() ||
+      (req as any).userId ||
+      req.body?.userId;
     if (!userId) {
       return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
@@ -1824,7 +1843,10 @@ export const getUserMemories = async (req: Request, res: Response) => {
  */
 export const updateMemory = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).userId;
+    const userId =
+      req.user?._id?.toString() ||
+      (req as any).userId ||
+      req.body?.userId;
     if (!userId) {
       return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
@@ -1928,7 +1950,10 @@ export const updateMemory = async (req: Request, res: Response) => {
  */
 export const deleteMemory = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).userId;
+    const userId =
+      req.user?._id?.toString() ||
+      (req as any).userId ||
+      req.body?.userId;
     if (!userId) {
       return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
