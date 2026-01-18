@@ -96,36 +96,49 @@ const EXERCISE_MEDITATIONS = [
 ] as const;
 
 let exercisesSeeded = false;
+let seedingInProgress = false;
 
 async function ensureExerciseMeditations() {
-  if (exercisesSeeded) return;
-
-  const operations = EXERCISE_MEDITATIONS.map((exercise) => ({
-    updateOne: {
-      filter: { title: exercise.title },
-      update: {
-        $set: {
-          title: exercise.title,
-          description: exercise.description,
-          durationSeconds: exercise.durationSeconds,
-          duration: Math.max(1, Math.ceil(exercise.durationSeconds / 60)),
-          audioUrl: "",
-          category: exercise.category,
-          isPremium: false,
-          tags: exercise.tags,
-          script: exercise.script,
-          type: "exercise",
+  // Prevent concurrent seeding attempts
+  if (exercisesSeeded || seedingInProgress) return;
+  
+  seedingInProgress = true;
+  
+  try {
+    const operations = EXERCISE_MEDITATIONS.map((exercise) => ({
+      updateOne: {
+        filter: { title: exercise.title },
+        update: {
+          $set: {
+            title: exercise.title,
+            description: exercise.description,
+            durationSeconds: exercise.durationSeconds,
+            duration: Math.max(1, Math.ceil(exercise.durationSeconds / 60)),
+            audioUrl: "",
+            category: exercise.category,
+            isPremium: false,
+            tags: exercise.tags,
+            script: exercise.script,
+            type: "exercise",
+          },
         },
+        upsert: true,
       },
-      upsert: true,
-    },
-  }));
+    }));
 
-  if (operations.length > 0) {
-    await Meditation.bulkWrite(operations);
+    if (operations.length > 0) {
+      await Meditation.bulkWrite(operations);
+      console.log(`✅ Seeded ${EXERCISE_MEDITATIONS.length} exercise meditations`);
+    }
+
+    exercisesSeeded = true;
+  } catch (error) {
+    console.error("❌ Error seeding exercise meditations:", error);
+    // Don't set exercisesSeeded = true on error, so we can retry
+    throw error;
+  } finally {
+    seedingInProgress = false;
   }
-
-  exercisesSeeded = true;
 }
 
 // Get all meditations with search
@@ -140,22 +153,30 @@ export const getMeditations = async (req: Request, res: Response) => {
     const filter: any = {};
 
     // Default to visual exercises only (hide guided meditations)
+    const exerciseFilter: any = {};
     if (type) {
-      filter.type = type;
+      exerciseFilter.type = type;
     } else {
-      filter.$or = [
+      exerciseFilter.$or = [
         { type: "exercise" },
         { type: { $exists: false }, category: "Exercises" }
       ];
     }
     
-    // Add search functionality
+    // Combine exercise filter with search if search is provided
     if (search) {
-      filter.$or = [
-        { title: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } },
-        { tags: { $in: [new RegExp(search as string, "i")] } }
-      ];
+      const searchFilter = {
+        $or: [
+          { title: { $regex: search, $options: "i" } },
+          { description: { $regex: search, $options: "i" } },
+          { tags: { $in: [new RegExp(search as string, "i")] } }
+        ]
+      };
+      // Use $and to combine both filters
+      filter.$and = [exerciseFilter, searchFilter];
+    } else {
+      // No search, just use exercise filter
+      Object.assign(filter, exerciseFilter);
     }
     
     if (category) filter.category = category;
