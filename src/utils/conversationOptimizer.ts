@@ -624,7 +624,9 @@ function extractKeyFactsKeywordBased(
 
 /**
  * Generate AI-powered summary about the user based on conversation history
- * This creates a comprehensive summary rather than individual facts
+ * This creates THE persistent memory that persists across sessions.
+ * Individual facts are intermediate data used to build this summary,
+ * but the summary itself is what the AI remembers about the user.
  */
 export async function generateUserSummary(
   messages: Array<{ role: string; content: string; timestamp?: Date }>,
@@ -653,31 +655,31 @@ export async function generateUserSummary(
 
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
-    const summaryPrompt = `You are a mental health AI assistant. Based on the following conversation history, create a comprehensive summary about this user that will help you provide personalized support in future conversations.
+    const summaryPrompt = `You are a mental health AI assistant. Based on the following conversation history, create a COMPACT summary about this user for personalized support.
 
 ${existingSummary ? `Previous summary to update:\n${existingSummary}\n\n` : ''}
 
-Analyze the conversation and create a summary that includes:
+Create a BRIEF summary (100-200 words max) covering only essential points:
 
-1. **Background & Context**: Key personal details, life circumstances, and context mentioned
-2. **Mental Health Profile**: Emotional patterns, challenges, triggers, and coping mechanisms
-3. **Goals & Aspirations**: What the user wants to achieve or work on
-4. **Communication Style**: How they express themselves, their preferences
-5. **Progress & Insights**: Important realizations, breakthroughs, or patterns identified
-6. **Support Needs**: What kind of support or approach works best for them
+1. **Key Context**: Important personal details or circumstances (1-2 sentences)
+2. **Main Challenges**: Primary emotional patterns, triggers, or struggles (1-2 sentences)
+3. **Goals**: What they're working toward (1 sentence)
+4. **Communication Style**: How they prefer to communicate (1 sentence)
+5. **Support Approach**: What works best for them (1 sentence)
 
-**Guidelines:**
-- Write in third person (e.g., "The user struggles with...", "They have mentioned...")
-- Be comprehensive but concise (300-500 words)
-- Focus on patterns and insights, not individual message details
-- Maintain therapeutic context without verbatim quotes
-- Highlight what's most relevant for future personalized support
-- If updating an existing summary, merge new information while preserving important context
+**CRITICAL Guidelines:**
+- Write in third person (e.g., "The user struggles with...", "They prefer...")
+- Be EXTREMELY compact - maximum 200 words total
+- Use bullet points or short sentences - no long paragraphs
+- Focus ONLY on what's essential for future conversations
+- Skip details - only include patterns and key facts
+- If updating, merge new info while keeping it brief
+- Each section should be 1-2 sentences maximum
 
 Conversation History:
 ${conversationText.substring(0, 10000)} // Limit input to avoid token issues
 
-Generate a comprehensive user summary:`;
+Generate a COMPACT user summary (100-200 words max):`;
 
     const result = await model.generateContent(summaryPrompt);
     const response = result.response;
@@ -688,11 +690,14 @@ Generate a comprehensive user summary:`;
       return null;
     }
 
+    // Enforce compact summary - limit to 500 characters (approximately 100-125 words)
+    const compactSummary = summaryText.substring(0, 500);
+    
     return {
       type: 'user_summary',
-      content: summaryText.substring(0, 2000), // Limit to 2000 chars
+      content: compactSummary,
       importance: 10, // User summaries are always high importance
-      tags: ['summary', 'user-profile', 'ai-generated'],
+      tags: ['summary', 'user-profile', 'ai-generated', 'compact'],
       context: `Generated from ${messages.length} messages`,
     };
 
@@ -726,7 +731,8 @@ export async function extractKeyFacts(
   tags: string[];
   context?: string;
 }>> {
-  // Try AI-powered extraction first
+  // Only use AI-powered extraction - no fallback to keyword-based extraction
+  // This ensures higher quality, context-aware memory extraction
   const aiFacts = await extractKeyFactsWithAI(messages, limit);
   
   if (aiFacts.length > 0) {
@@ -734,8 +740,9 @@ export async function extractKeyFacts(
     return aiFacts;
   }
 
-  // Fallback to keyword-based extraction if AI extraction failed or returned no facts
-  logger.debug('Falling back to keyword-based fact extraction');
-  return extractKeyFactsKeywordBased(messages, limit);
+  // If AI extraction fails or returns no facts, return empty array
+  // This prevents low-quality keyword-based extractions from being stored
+  logger.debug('AI extraction returned no facts - skipping memory storage to maintain quality');
+  return [];
 }
 

@@ -441,44 +441,17 @@ function buildSelectiveMemorySnippet(memoryData: UserMemory, intent: ChatIntent)
 
   const parts: string[] = [];
 
-  // Include user summary first (most comprehensive)
+  // The user summary IS the persistent memory across sessions
+  // Individual facts are only used to build/update the summary, not as separate memories
   const facts = memoryData.facts || [];
-  // Check for legacy 'user_summary' fact. Otherwise,
-  // if you want to interpret an 'insight' fact as the user summary,
-  // do it based only on its content/tags (because 'isSummary' is not typed).
-  let userSummary = facts.find(f => f.type === 'user_summary');
-  if (!userSummary) {
-    // Try to heuristically detect an insight that appears to be a summary.
-    userSummary = facts.find(
-      f =>
-        f.type === 'insight' &&
-        (
-          typeof f.content === 'string' &&
-          (
-            f.content.toLowerCase().includes('summary') ||
-            (Array.isArray(f.tags) && f.tags.some(t => t.toLowerCase().includes('summary')))
-          )
-        )
-    );
-  }
+  const userSummary = facts.find(f => f.type === 'user_summary');
 
   if (userSummary) {
-    // User summary is the primary memory - always include it
-    parts.push(`**About this user (AI-generated summary):**\n${userSummary.content}`);
-  } else if (facts.length > 0) {
-    // Fallback: If no summary exists, use important facts
-    const importantFacts = facts
-      .filter(f => f.type !== 'user_summary' && f.importance >= 6) // Only high-importance facts, exclude summary
-      .slice(0, 10) // Top 10 most important
-      .map(f => {
-        const typeLabel = f.type.replace('_', ' ');
-        return `- ${typeLabel}: ${f.content}`;
-      });
-    
-    if (importantFacts.length > 0) {
-      parts.push(`**Important things to remember about this person:**\n${importantFacts.join('\n')}`);
-    }
+    // Summary is THE persistent memory - this is what the AI remembers across sessions
+    parts.push(`**Persistent memory (what I remember about you):**\n${userSummary.content}`);
   }
+  // Note: We don't fall back to individual facts - if no summary exists yet, 
+  // the AI will build one from conversations. Individual facts are intermediate data only.
 
   // Stable profile facts (small)
   const prefs = memoryData.profile?.preferences || {};
@@ -838,16 +811,38 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
           ? ''
           : rawSubject;
         if (subject) {
-          await LongTermMemoryModel.create({
-            userId: userIdObj,
-            type: 'insight',
-            content: subject.substring(0, 200),
-            importance: 8,
-            tags: ['user-controlled', 'explicit-memory'],
-            context: 'User asked to remember this',
-            timestamp: now,
+          // Apply memory filters (explicit commands override relevance but NOT privacy)
+          const { filterMemoryForStorage } = require('../utils/memoryFilters');
+          const filterResult = filterMemoryForStorage(subject, {
+            isExplicitCommand: true, // Explicit consent - override relevance/frequency
+            previousMessages: session.messages || [],
+            context: 'User explicitly requested to remember',
           });
-          invalidateMemoryCacheForUser(userId);
+
+          if (filterResult.shouldStore) {
+            // Determine type from categorization
+            let memoryType: string = 'insight';
+            if (filterResult.category === 'Style') memoryType = 'preference';
+            else if (filterResult.category === 'Projects' || filterResult.category === 'Goals') memoryType = 'goal';
+            else if (filterResult.category === 'Emotional') memoryType = 'emotional_theme';
+            else if (filterResult.category === 'Coping') memoryType = 'coping_pattern';
+            else if (filterResult.category === 'People') memoryType = 'person';
+            else if (filterResult.category === 'Triggers') memoryType = 'trigger';
+
+            await LongTermMemoryModel.create({
+              userId: userIdObj,
+              type: memoryType as any,
+              content: subject.substring(0, 200),
+              importance: filterResult.importance || 9, // High importance for explicit memories
+              tags: ['user-controlled', 'explicit-memory'],
+              context: 'User asked to remember this',
+              timestamp: now,
+            });
+            invalidateMemoryCacheForUser(userId);
+            logger.info(`Stored explicit memory: ${memoryType} - ${subject.substring(0, 50)}...`);
+          } else {
+            logger.warn(`Explicit memory request blocked by filter: ${filterResult.reason}`);
+          }
         }
 
         session.messages.push({
@@ -857,14 +852,39 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
         });
         session.messages.push({
           role: "assistant",
-          content: subject ? "Got it — I’ll remember that." : "Tell me what you want me to remember.",
+          content: subject ? "Got it — I'll remember that." : "Tell me what you want me to remember.",
           timestamp: now,
         });
         await session.save();
 
+        // Immediately trigger summary update when explicit memory command is detected
+        // Reload all messages to include the new ones
+        const updatedMessages = session.messages.map((m: any) => ({
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp,
+        }));
+        
+        const { generateUserSummary } = require('../utils/conversationOptimizer');
+        const existingSummary = await LongTermMemoryModel.findOne({
+          userId: userIdObj,
+          type: 'user_summary',
+        }).lean();
+        
+        generateUserSummary(updatedMessages, existingSummary?.content)
+          .then((summary: any) => {
+            if (summary) {
+              logger.info('Immediately updated user summary after explicit memory command');
+              return storeUserSummary(userId, summary, existingSummary?._id?.toString());
+            }
+          })
+          .catch((error: any) => {
+            logger.warn('Failed to update summary after memory command:', error.message);
+          });
+
         return res.json({
           success: true,
-          response: subject ? "Got it — I’ll remember that." : "Tell me what you want me to remember.",
+          response: subject ? "Got it — I'll remember that." : "Tell me what you want me to remember.",
           metadata: { memoryAction: 'remember' },
         });
       }
@@ -1151,10 +1171,24 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
       }
     }
 
+    // Check if current message contains memory-worthy content that should trigger immediate summary update
+    const { filterMemoryForStorage } = require('../utils/memoryFilters');
+    const hasExplicitMemoryCommand = memoryCommand && memoryCommand.action === 'remember';
+    const hasMemoryWorthyContent = filterMemoryForStorage(message, {
+      isExplicitCommand: hasExplicitMemoryCommand,
+      previousMessages: allCurrentSessionMessages.slice(0, -1), // All messages except current
+      context: 'Current message analysis',
+    }).shouldStore;
+
+    // Determine if summary should be updated immediately
+    const shouldUpdateSummaryImmediately = 
+      hasExplicitMemoryCommand || // User explicitly said "remember this"
+      (hasMemoryWorthyContent && allCurrentSessionMessages.length >= 3); // Memory-worthy content with at least 3 messages
+
     // Generate or update user summary from ALL messages (async, don't block)
-    // This uses the full message history, not the truncated version
-    // Generate summary after accumulating enough conversation (10+ messages)
-    if (allCurrentSessionMessages.length >= 10) {
+    // Update immediately if explicit memory command or memory-worthy content detected
+    // Otherwise, update after accumulating enough conversation (10+ messages)
+    if (shouldUpdateSummaryImmediately || allCurrentSessionMessages.length >= 10) {
       // Get existing user summary to update it
       const userIdObj = new Types.ObjectId(userId);
       const existingSummary = await LongTermMemoryModel.findOne({
@@ -1176,7 +1210,12 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
           context?: string;
         } | null) => {
           if (summary) {
-            logger.info('AI generated user summary from conversation');
+            const updateReason = hasExplicitMemoryCommand 
+              ? 'explicit memory command detected' 
+              : hasMemoryWorthyContent 
+                ? 'memory-worthy content detected'
+                : 'periodic update (10+ messages)';
+            logger.info(`AI generated/updated user summary - ${updateReason}`);
             // Store or update user summary asynchronously
             return storeUserSummary(userId, summary, existingSummary?._id?.toString());
           }
@@ -1186,22 +1225,29 @@ export const sendMemoryEnhancedMessage = async (req: Request, res: Response) => 
         });
     }
     
-    // Also extract key facts for quick reference (in addition to summary)
-    // Extract facts more aggressively - start after just 5 messages
-    if (allCurrentSessionMessages.length >= 5) {
+    // Extract individual facts to help build/update the summary
+    // These facts are intermediate data - the summary is the actual persistent memory
+    // Extract facts immediately if explicit memory command, otherwise after 3+ messages
+    const shouldExtractFacts = hasExplicitMemoryCommand || allCurrentSessionMessages.length >= 3;
+    if (shouldExtractFacts) {
       // Extract more facts for longer conversations
       const factLimit = allCurrentSessionMessages.length > 20 ? 15 : 10;
       // AI-powered extraction (async) - don't block response
       extractKeyFacts(allCurrentSessionMessages, factLimit)
         .then((keyFacts) => {
           if (keyFacts.length > 0) {
-            logger.info(`AI extracted ${keyFacts.length} key facts from conversation`);
-            // Store key facts asynchronously (don't wait for completion)
-            return storeKeyFacts(userId, keyFacts);
+            const extractionReason = hasExplicitMemoryCommand 
+              ? 'explicit memory command' 
+              : 'periodic extraction';
+            logger.info(`AI extracted ${keyFacts.length} facts to help update summary (${extractionReason})`);
+            // Store facts asynchronously - these feed into summary generation
+            // The summary (not individual facts) is what persists across sessions
+            // Pass previous messages for frequency/pattern filtering
+            return storeKeyFacts(userId, keyFacts, allCurrentSessionMessages);
           }
         })
         .catch((error: any) => {
-          logger.warn('Failed to extract/store key facts:', error.message);
+          logger.warn('Failed to extract/store facts:', error.message);
         });
     }
 
@@ -1482,7 +1528,9 @@ Remember: Stay in Hope's warm, human voice. CBT techniques should feel natural, 
 
 /**
  * Store or update user summary generated by AI
- * This creates a comprehensive summary about the user for future sessions
+ * This is THE persistent memory that persists across sessions.
+ * The summary is what the AI remembers about the user - it's built from
+ * individual facts and conversations, but the summary itself is the memory.
  */
 async function storeUserSummary(
   userId: string,
@@ -1537,8 +1585,10 @@ async function storeUserSummary(
 }
 
 /**
- * Store key facts extracted from conversation into persistent memory
- * This enables the AI to "remember" important details across sessions
+ * Store key facts extracted from conversation
+ * NOTE: These individual facts are intermediate data used to build/update the summary.
+ * The SUMMARY is the actual persistent memory across sessions - individual facts 
+ * are used to inform summary generation but are not the primary memory.
  */
 async function storeKeyFacts(
   userId: string,
@@ -1557,15 +1607,36 @@ async function storeKeyFacts(
     importance: number;
     tags: string[];
     context?: string;
-  }>
+  }>,
+  previousMessages: Array<{ content: string }> = []
 ): Promise<void> {
   if (!facts || facts.length === 0) return;
 
   try {
     const userIdObj = new Types.ObjectId(userId);
+    const { filterMemoryForStorage } = require('../utils/memoryFilters');
     
     // Store facts that don't already exist (avoid duplicates)
     for (const fact of facts) {
+      // Apply multi-layer memory filters before storing
+      const filterResult = filterMemoryForStorage(fact.content, {
+        isExplicitCommand: fact.tags?.includes('user-controlled') || false,
+        previousMessages: previousMessages,
+        context: fact.context,
+      });
+
+      // Only store if filters pass
+      if (!filterResult.shouldStore) {
+        logger.debug(
+          `Memory filter blocked fact: ${fact.type} - ${fact.content.substring(0, 50)}... ` +
+          `Reason: ${filterResult.reason}`
+        );
+        continue; // Skip this fact
+      }
+
+      // Use filter-determined importance if available, otherwise use original
+      const finalImportance = filterResult.importance || fact.importance;
+
       // Check if similar fact already exists (simple content match for now)
       const existing = await LongTermMemoryModel.findOne({
         userId: userIdObj,
@@ -1573,21 +1644,24 @@ async function storeKeyFacts(
       });
 
       if (!existing) {
-        // Store new fact
+        // Store new fact with filtered importance
         await LongTermMemoryModel.create({
           userId: userIdObj,
           type: fact.type,
           content: fact.content,
-          importance: fact.importance,
-          tags: fact.tags,
+          importance: finalImportance,
+          tags: fact.tags || [],
           context: fact.context,
           timestamp: new Date(),
         });
-        logger.debug(`Stored key fact: ${fact.type} - ${fact.content.substring(0, 50)}...`);
+        logger.debug(
+          `Stored key fact: ${fact.type} (${filterResult.category || 'uncategorized'}) ` +
+          `- Importance: ${finalImportance} - ${fact.content.substring(0, 50)}...`
+        );
       } else {
         // Update importance if new fact is more important
-        if (fact.importance > existing.importance) {
-          existing.importance = fact.importance;
+        if (finalImportance > existing.importance) {
+          existing.importance = finalImportance;
           existing.timestamp = new Date();
           await existing.save();
           logger.debug(`Updated importance for existing fact: ${fact.content.substring(0, 50)}...`);
